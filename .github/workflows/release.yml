@@ -1,0 +1,57 @@
+name: Release
+
+# Builds the plugin from source, attests the assets, and publishes the release.
+# The tag must equal `manifest.json`'s version exactly (no "v" prefix) — that is
+# how Obsidian finds the assets when a user installs or updates the plugin.
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        run: node node_modules/typescript/bin/tsc --noEmit --skipLibCheck
+
+      - name: Verify manifest version matches the tag
+        run: |
+          node -e "const m=require('./manifest.json');const t=process.env.GITHUB_REF_NAME;if(m.version!==t){console.error('manifest.json version '+m.version+' does not match tag '+t);process.exit(1)}"
+
+      # Same flags as the local build on purpose: no minification, so reviewers
+      # and users can read the shipped bundle.
+      - name: Build
+        run: npx esbuild src/main.ts --bundle --format=cjs --platform=browser --target=es2020 --external:obsidian --outfile=main.js
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            styles.css
+            manifest.json
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            main.js
+            manifest.json
+            styles.css
+          generate_release_notes: true
