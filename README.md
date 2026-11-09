@@ -1,9 +1,17 @@
 # Inkstone PDF
 
+English | [中文](#中文说明)
+
 Handwrite, sketch and annotate directly on PDF pages **inside Obsidian** — with pressure, layers,
 undo/redo, and annotations stored separately so your PDF is never modified.
 
 > **Inkstone PDF** (id `inkstone-pdf`) · desktop only · Obsidian 1.8.0+
+
+![The full Obsidian window: a PDF page with shapes, a selection box and the stroke menu](./docs/images/hero.png)
+
+![The full window again: a rotated selection frame with the live scale read-out](./docs/images/selection-rotate.png)
+
+![The floating toolbar: tools, quick colours, undo, layers](./docs/images/toolbar.png)
 
 ## Why another PDF annotator?
 
@@ -84,3 +92,65 @@ main.js styles.css   build output (committed so any tag is installable)
 ## License
 
 MIT — see [LICENSE](LICENSE). Bundled dependencies and their notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+---
+
+## 中文说明
+
+在 **Obsidian 里直接手写批注 PDF**：压感、图层、布尔裁剪橡皮、撤销/重做；笔迹存在库内的独立文件里，**原 PDF 一个字节都不改**。
+
+> 插件名 **Inkstone PDF**（id `inkstone-pdf`），仅桌面端，Obsidian 1.8.0+。
+
+![完整的 Obsidian 窗口：PDF 页面上的图形、选中框与笔尖菜单](./docs/images/hero.png)
+
+![同样保留整个窗口：旋转后的选中框与实时缩放读数](./docs/images/selection-rotate.png)
+
+![浮动工具栏：工具、常用色、撤销、图层](./docs/images/toolbar.png)
+
+### 解决什么问题
+
+PDF 阅读器只能高亮，手写要去 iPad，写完还得导出、截图、手动誊回笔记——批注和笔记永远是两套东西。Inkstone PDF 把 Obsidian 的 PDF 视图变成一张可以直接写的纸，笔迹和你的笔记待在同一个库里。
+
+- **落笔即写**，压感逐点生效，不需要先切"绘制模式"；
+- **布尔裁剪橡皮**：擦过的地方是真的被挖掉，移动笔迹也不会重新冒出来；
+- **有向选区**：四角自由缩放、边中点单轴缩放、圆点旋转（15° 吸附）、方向键微移、复制/剪切/粘贴；
+- **文档级图层**：批注写一层、答案写一层，隐藏一层就能自己考自己；
+- **数位板适配**：按住键临时橡皮、Shift 贴页面拖动改粗细、所有工具键位可重绑；
+- **原 PDF 不动**：笔迹存在库内的侧车 JSON，跟随库同步，可撤销。
+
+### 安装
+
+**社区目录**：设置 → 第三方插件 → 浏览 → 搜索 **Inkstone PDF** → 安装 → 启用。
+
+**手动**：下载最新 Release 里的 `main.js`、`manifest.json`、`styles.css`，放到 `<你的库>/.obsidian/plugins/inkstone-pdf/`，重启 Obsidian（或 `Ctrl/Cmd+R`），再到 设置 → 第三方插件 启用。
+
+### 用法速查
+
+| 操作 | 方式 |
+| --- | --- |
+| 书写 | 选钢笔，直接在 PDF 页面上写 |
+| 工具 | `P` 钢笔 · `H` 荧光笔 · `E` 橡皮 · `S` 选择 · `L` 直线 · `A` 箭头 · `R` 矩形 · `O` 椭圆 · `G` 拖拽页面 |
+| 笔刷面板 | 双击（或右键/长按）笔刷按钮 |
+| 临时橡皮 | 按住 `F`，松手回到原来那支笔 |
+| 调笔刷 | 按住 `Shift`，让笔**贴着页面**移动：左右改粗细、上下改不透明度 |
+| 选中笔迹 | 选择工具拖框；之后拖动、缩放、旋转、方向键微移 |
+| 文本选择 | 选择工具 + `Alt`（把页面交还给 PDF 文本层） |
+| 撤销/重做 | `Ctrl/Cmd+Z` · `Ctrl/Cmd+Shift+Z` |
+
+以上键位都能在 **设置 → Inkstone PDF → 键位映射** 里改。
+
+### 数据
+
+- 批注：`<库>/附件/Ink 标注/<PDF 路径>.json`（文件夹可改）。
+- 不写入原 PDF。
+- 更早版本的橡皮蒙版会在加载时被删除（先写一份 `.bak`），被它们盖住的墨迹会重新显示。
+
+### 已知限制
+
+- 仅桌面端，未在移动端测试。
+- 旋转过的矩形/椭圆会被烘焙成多边形（外观一致，但不再是"形状"）。
+- 同一个 PDF 的批注只存在于该 PDF 所在的那个库里。
+
+### 许可
+
+MIT，见 [LICENSE](LICENSE)；打包的第三方代码与声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
