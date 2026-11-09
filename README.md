@@ -7,6 +7,17 @@ undo/redo, and annotations stored separately so your PDF is never modified.
 
 > **Inkstone PDF** (id `inkstone-pdf`) · desktop only · Obsidian 1.8.0+
 
+> ### ⚠️ Early preview
+>
+> `0.1.2` is an **early preview, not a finished product.** The code is written by **DSH** (DeepSeek
+> Harness). I test it, use it and pass the problems back. Expect rough edges.
+>
+> If something crashes, draws wrong, or simply does not do what you expect, **email
+> `1315675831@qq.com`** with what you did and what happened instead. No template needed; a screenshot
+> helps.
+>
+> Back up `附件/Ink 标注/` before you keep anything important in it.
+
 ![The full Obsidian window: a PDF page with shapes, a selection box and the stroke menu](./docs/images/hero.png)
 
 ![The full window again: a rotated selection frame with the live scale read-out](./docs/images/selection-rotate.png)
@@ -31,6 +42,8 @@ write on, and the ink lives in your vault next to your notes.
   with it and undo still works.
 
 ## Install
+
+> Preview build: back up `附件/Ink 标注/` before you annotate anything you care about.
 
 ### From the community directory
 
@@ -65,6 +78,19 @@ Every shortcut above is rebindable in **Settings → Inkstone PDF → Key map**.
   annotation file (`附件/Ink 标注/<path>.json`).
 - **System clipboard: write-only, once.** The `Show performance summary` command copies the summary
   text to the clipboard so you can paste it into a bug report. The plugin never reads the clipboard.
+
+## Feedback
+
+A preview build lives or dies on bug reports, so they are the most useful thing you can send.
+
+- **Email:** `1315675831@qq.com`
+- Please include: your Obsidian version, the plugin version (Settings → Community plugins), what you
+  did, and what happened instead.
+- Useful extras: whether the PDF is a scan, how many pages it has, and whether it reproduces.
+- Number to attach: command palette → `导出诊断信息` (export diagnostics) writes `debug.json` next to
+  the plugin. It holds performance counters, the plugin list and the paths of open files — skim it
+  before you attach it.
+
 ## Data
 
 - Annotations: `<vault>/附件/Ink 标注/<path of the PDF>.json` (folder configurable).
@@ -77,6 +103,38 @@ Every shortcut above is rebindable in **Settings → Inkstone PDF → Key map**.
 - Desktop only; not tested on mobile.
 - Rotated rectangles/ellipses are baked into polygons (visually identical, no longer a "shape").
 - Annotations of a PDF live in the vault that contains that PDF.
+- The annotation file only ever gains fields, so old data stays readable — but behaviour can still
+  change between preview builds.
+
+## What is still being built
+
+Roughly the order it will be worked on. **None of it is a promise**; any item can move, shrink or
+disappear.
+
+**In progress**
+
+- **Input smoothing.** An optional jitter filter (off / light / medium) for shaking hands. It costs
+  0.5–2 frames of latency, so the default has to be measured on a real tablet instead of guessed.
+- **Pan tool.** Hold `Shift` on the pan tool to zoom vertically, and a rebindable key that toggles
+  between pen and pan.
+- **More rebindable actions.** Eraser region/mode, brush presets 1–3, brush size ±, layer up/down,
+  page next/previous. The key-map structure already exists; the actions are not wired up yet.
+- **Brush panel finish.** Reorder presets, restore defaults, and keep the panel in step when the tool
+  changes.
+
+**Planned, shape not fixed**
+
+- **Selection on big pages.** Dragging a selection repaints the whole page every frame; on a
+  viewport-sized page that can drop frames.
+- **Annotation file size.** A 749-page book with ~500 strokes comes to about 650 KB. Per-page files
+  and stronger point quantisation are the candidates.
+- **Wanted but undecided.** A highlighter that sits *over* existing ink, ink that works as an
+  internal link between pages, stickers and pasted images.
+
+**Not planned**
+
+- Page-level layers, a zoom-in writing mode, a separate brush box, writing real PDF annotations back
+  into the file, rich text.
 
 ## Development
 
@@ -108,6 +166,14 @@ MIT — see [LICENSE](LICENSE). Bundled dependencies and their notices: [THIRD_P
 
 > 插件名 **Inkstone PDF**（id `inkstone-pdf`），仅桌面端，Obsidian 1.8.0+。
 
+> ### ⚠️ 先行测试版
+>
+> **`0.1.2` 是先行测试版，不是成品。** 代码由 **DSH**（DeepSeek Harness）开发，测试、实测和问题反馈由我来做，小毛病在所难免。
+>
+> 崩溃、笔迹画错、操作不符合预期——**发邮件到 `1315675831@qq.com`**，写清"做了什么 / 出现了什么现象"就行，不需要任何模板，有截图更好。
+>
+> 重要批注请先备份 `附件/Ink 标注/`。
+
 ![完整的 Obsidian 窗口：PDF 页面上的图形、选中框与笔尖菜单](./docs/images/hero.png)
 
 ![同样保留整个窗口：旋转后的选中框与实时缩放读数](./docs/images/selection-rotate.png)
@@ -126,6 +192,8 @@ PDF 阅读器只能高亮，手写要去 iPad，写完还得导出、截图、�
 - **原 PDF 不动**：笔迹存在库内的侧车 JSON，跟随库同步，可撤销。
 
 ### 安装
+
+> 先行测试版：正式拿来记东西之前，先备份 `附件/Ink 标注/`。
 
 **社区目录**：设置 → 第三方插件 → 浏览 → 搜索 **Inkstone PDF** → 安装 → 启用。
 
@@ -151,6 +219,16 @@ PDF 阅读器只能高亮，手写要去 iPad，写完还得导出、截图、�
 - **不联网**：没有任何网络请求，也没有遥测。
 - **库内读写**：通过 Obsidian API 读取你打开的 PDF，读写它的批注文件（`附件/Ink 标注/<路径>.json`）。
 - **系统剪贴板：只写不读**，且只在一个地方写——「显示性能摘要」命令会把摘要文本复制到剪贴板，方便你贴进反馈里。插件从不读取剪贴板内容。
+
+### 反馈
+
+先行测试版最缺的就是问题报告，所以那是你能给出的最有用的东西。
+
+- **邮箱**：`1315675831@qq.com`
+- 请写上：Obsidian 版本、插件版本（设置 → 第三方插件）、你做了什么、实际发生了什么。
+- 加分信息：PDF 是不是扫描件、多少页、能不能稳定复现。
+- 想带上数据：命令面板 →「导出诊断信息」会在插件目录生成 `debug.json`，里面是性能计数、插件列表和打开文件的路径，发之前自己扫一眼。
+
 ### 数据
 
 - 批注：`<库>/附件/Ink 标注/<PDF 路径>.json`（文件夹可改）。
@@ -162,6 +240,28 @@ PDF 阅读器只能高亮，手写要去 iPad，写完还得导出、截图、�
 - 仅桌面端，未在移动端测试。
 - 旋转过的矩形/椭圆会被烘焙成多边形（外观一致，但不再是"形状"）。
 - 同一个 PDF 的批注只存在于该 PDF 所在的那个库里。
+- 批注文件只会增量加字段，旧数据始终可读——但测试版之间的行为仍可能变化。
+
+### 后续在做什么
+
+大致按动手顺序排，**都不是承诺**，任何一项都可能提前、推迟或砍掉。
+
+**正在做**
+
+- **输入抖动修正**：可选的抖动滤波（关 / 轻 / 中），照顾手不稳的情况；代价是 0.5–2 帧延迟，所以默认档要实测后再定，不拍脑袋。
+- **拖拽工具收尾**：拖拽工具下按住 `Shift` 纵向缩放页面，外加一个可重绑的「笔 / 拖拽」切换键。
+- **更多可重绑动作**：橡皮区域/方式、笔刷预设 1–3、笔宽 ±、图层上/下、翻页。键位表结构已就绪，动作还没接上。
+- **笔刷面板收尾**：预设排序、恢复默认预设、切工具时面板跟着换。
+
+**计划中，形态未定**
+
+- **大页面上的选区变换**：拖动选区时每帧整页重绘，页面大时会掉帧。
+- **批注文件体积**：749 页的书、约 500 笔就到 650KB 左右；候选方案是按页拆分 + 更强的点量化。
+- **想加但没定**：能盖住已有墨迹的荧光笔、笔迹当页内链接跳转、贴纸与图片插入。
+
+**明确不做**
+
+页面级图层、放大书写模式、独立笔盒、写回 PDF 注释、富文本。
 
 ### 许可
 
