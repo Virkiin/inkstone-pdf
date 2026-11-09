@@ -1,14 +1,6 @@
 import type { Stroke } from "./types";
 import { subtractEraser } from "./outline";
-import {
-	clipRuns,
-	flattenStroke,
-	regionHitsPath,
-	splitByRegion,
-	type FlatPath,
-	type Px,
-	type RegionTest,
-} from "./paths";
+import { flattenStroke, regionHitsPath, type RegionTest } from "./paths";
 
 export * from "./paths";
 

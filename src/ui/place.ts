@@ -64,8 +64,8 @@ export function placeFloating(
 			best = { left, top };
 		}
 	}
-	el.style.left = `${Math.round(best.left)}px`;
-	el.style.top = `${Math.round(best.top)}px`;
+	el.setCssStyles({ left: `${Math.round(best.left)}px` });
+	el.setCssStyles({ top: `${Math.round(best.top)}px` });
 }
 
 /** `getBoundingClientRect()` as a plain box, for `placeFloating`. */

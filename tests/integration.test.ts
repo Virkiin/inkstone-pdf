@@ -32,6 +32,16 @@ const { window } = dom;
 (globalThis as any).MutationObserver = window.MutationObserver;
 (globalThis as any).devicePixelRatio = 1;
 
+// Obsidian adds these helpers to HTMLElement at runtime; jsdom does not have
+// them, so the harness provides the same behaviour (the plugin uses
+// setCssStyles instead of assigning `element.style.x`).
+(window as any).HTMLElement.prototype.setCssStyles = function (styles: Record<string, string>) {
+	Object.assign(this.style, styles);
+};
+(window as any).HTMLElement.prototype.setCssProps = function (props: Record<string, string>) {
+	for (const [key, value] of Object.entries(props)) this.style.setProperty(key, value);
+};
+
 const fakeCtx = () => {
 	const calls: string[] = [];
 	const ctx: any = {

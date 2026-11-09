@@ -69,8 +69,6 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 	private readonly globalPointerDown = (event: PointerEvent): void => {
 		this.handleGlobalPointerDown(event);
 	};
-	/** injected <style> that disables other plugins' backdrop-filter */
-	private blurShieldEl: HTMLStyleElement | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -237,8 +235,7 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		for (const controller of this.controllers.values()) controller.destroy();
 		this.controllers.clear();
 		this.lastController = null;
-		this.blurShieldEl?.remove();
-		this.blurShieldEl = null;
+		document.body.classList.remove("inkstone-pdf-blur-shield");
 		await this.storage.flushAll();
 	}
 
@@ -360,9 +357,9 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 				ctx.stroke();
 				frames++;
 				if (frames >= 24) resolve();
-				else requestAnimationFrame(step);
+				else window.requestAnimationFrame(step);
 			};
-			requestAnimationFrame(step);
+			window.requestAnimationFrame(step);
 		});
 		const sorted = [...frameTimes].sort((a, b) => a - b);
 		const frameP95 = Math.round((sorted[Math.floor(sorted.length * 0.95)] ?? 0) * 10) / 10;
@@ -404,12 +401,12 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		const canvas = document.createElement("canvas");
 		canvas.width = width;
 		canvas.height = height;
-		canvas.style.position = "absolute";
-		canvas.style.left = "0";
-		canvas.style.top = "0";
-		canvas.style.width = `${width}px`;
-		canvas.style.height = `${height}px`;
-		canvas.style.pointerEvents = "none";
+		canvas.setCssStyles({ position: "absolute" });
+		canvas.setCssStyles({ left: "0" });
+		canvas.setCssStyles({ top: "0" });
+		canvas.setCssStyles({ width: `${width}px` });
+		canvas.setCssStyles({ height: `${height}px` });
+		canvas.setCssStyles({ pointerEvents: "none" });
 		pageEl.appendChild(canvas);
 		const ctx = canvas.getContext("2d");
 		if (!ctx) {
@@ -432,9 +429,9 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 				ctx.stroke();
 				frames++;
 				if (frames >= 24) resolve();
-				else requestAnimationFrame(step);
+				else window.requestAnimationFrame(step);
 			};
-			requestAnimationFrame(step);
+			window.requestAnimationFrame(step);
 		});
 		canvas.remove();
 		const sorted = [...gaps].sort((a, b) => a - b);
@@ -524,24 +521,9 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 	 * the whole tree would cost more than it saves.
 	 */
 	applyBlurShield(): void {
-		this.blurShieldEl?.remove();
-		this.blurShieldEl = null;
-		if (!this.settings.blurShield) return;
-		const style = document.createElement("style");
-		style.id = "pdf-ink-blur-shield";
-		style.textContent = [
-			":is(#editingToolbarModalBar, #editingToolbarPopoverBar) {",
-			"\tbackdrop-filter: none !important;",
-			"\t-webkit-backdrop-filter: none !important;",
-			"}",
-			":is(#editingToolbarModalBar, #editingToolbarPopoverBar) *::before,",
-			":is(#editingToolbarModalBar, #editingToolbarPopoverBar) *::after {",
-			"\tbackdrop-filter: none !important;",
-			"\t-webkit-backdrop-filter: none !important;",
-			"}",
-		].join("\n");
-		document.head.appendChild(style);
-		this.blurShieldEl = style;
+		// CSS rules live in styles.css; this only flips a body class once at
+		// load (creating <style> elements at runtime is rejected by review).
+		document.body.classList.toggle("inkstone-pdf-blur-shield", this.settings.blurShield);
 	}
 
 	async saveSettings(): Promise<void> {
@@ -803,8 +785,8 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		let top = y + gap;
 		if (left > maxLeft) left = x - gap - w;
 		if (top > maxTop) top = y - gap - h;
-		hud.style.left = `${Math.round(clamp(left, 8, maxLeft))}px`;
-		hud.style.top = `${Math.round(clamp(top, 8, maxTop))}px`;
+		hud.setCssStyles({ left: `${Math.round(clamp(left, 8, maxLeft))}px` });
+		hud.setCssStyles({ top: `${Math.round(clamp(top, 8, maxTop))}px` });
 	}
 
 	private endShiftAdjust(): void {
@@ -1138,7 +1120,7 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 			perf: perf.snapshot(),
 			log: this.logLines.slice(-150),
 		};
-		const dir = this.manifest?.dir || ".obsidian/plugins/pdf-ink";
+		const dir = this.manifest?.dir || `${this.app.vault.configDir}/plugins/inkstone-pdf`;
 		try {
 			await this.app.vault.adapter.write(
 				`${dir}/debug.json`,

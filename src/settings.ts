@@ -167,7 +167,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		while (containerEl.firstChild) containerEl.removeChild(containerEl.firstChild);
 
-		containerEl.createEl("h2", { text: "PDF Ink 设置" });
+		new Setting(containerEl).setName("PDF Ink 设置").setHeading();
 
 		new Setting(containerEl)
 			.setName("批注数据文件夹")
@@ -184,7 +184,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h3", { text: "输入方式" });
+		new Setting(containerEl).setName("输入方式").setHeading();
 
 		new Setting(containerEl)
 			.setName("硬件")
@@ -212,7 +212,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h3", { text: "书写" });
+		new Setting(containerEl).setName("书写").setHeading();
 
 		new Setting(containerEl)
 			.setName("墨迹清晰度 / 流畅度")
@@ -331,7 +331,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h3", { text: "键位映射" });
+		new Setting(containerEl).setName("键位映射").setHeading();
 		containerEl.createEl("p", {
 			text:
 				"只在 PDF 视图是当前面板、且焦点不在输入框时生效。数位板驱动或笔的侧键映射出来的键盘按键，直接填在这里。点输入框后按一个键即录制，Esc 清空。注意别把同一个键也绑到 Obsidian 自带快捷键上，否则会执行两次。",
@@ -346,7 +346,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 		const bindings = resolveBindings(this.plugin.settings.keyBindings);
 		const inputs: Array<{ id: string; el: HTMLInputElement }> = [];
 		for (const group of ["工具", "颜色"]) {
-			containerEl.createEl("h4", { text: group });
+			new Setting(containerEl).setName(group).setHeading();
 			for (const action of ACTIONS.filter((entry) => entry.group === group)) {
 				const el = this.keyRow(
 					containerEl,
@@ -405,7 +405,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 				}),
 			);
 
-		containerEl.createEl("h3", { text: "钢笔" });
+		new Setting(containerEl).setName("钢笔").setHeading();
 
 		new Setting(containerEl).setName("默认颜色").addColorPicker((picker) =>
 			picker.setValue(this.plugin.settings.penColor).onChange(async (value) => {
@@ -442,7 +442,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h3", { text: "荧光笔" });
+		new Setting(containerEl).setName("荧光笔").setHeading();
 
 		new Setting(containerEl).setName("默认颜色").addColorPicker((picker) =>
 			picker.setValue(this.plugin.settings.highlighterColor).onChange(async (value) => {
@@ -473,7 +473,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 				}),
 		);
 
-		containerEl.createEl("h3", { text: "橡皮" });
+		new Setting(containerEl).setName("橡皮").setHeading();
 
 		new Setting(containerEl)
 			.setName("擦除方式")
@@ -521,7 +521,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h3", { text: "手势" });
+		new Setting(containerEl).setName("手势").setHeading();
 		containerEl.createEl("p", {
 			text:
 				"这组手势依赖「看得见笔尖停在哪里」，适合触屏平板；数位板上手在板、眼在屏，停住看不见，误触率高。在「输入方式 → 硬件」里选数位板会自动关掉它们。",
@@ -623,7 +623,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 				}),
 			);
 
-		containerEl.createEl("h3", { text: "自动识别图形" });
+		new Setting(containerEl).setName("自动识别图形").setHeading();
 
 		new Setting(containerEl)
 			.setName("画完自动变标准图形")
@@ -663,7 +663,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h3", { text: "常用色与调色板" });
+		new Setting(containerEl).setName("常用色与调色板").setHeading();
 
 		new Setting(containerEl)
 			.setName("工具栏常用色")
@@ -740,7 +740,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 			}),
 		);
 
-		containerEl.createEl("h3", { text: "笔刷预设" });
+		new Setting(containerEl).setName("笔刷预设").setHeading();
 		containerEl.createEl("p", {
 			text:
 				"预设是「颜色 + 粗细 + 不透明度」的整套组合。在工具栏双击/长按笔刷按钮打开面板，点「＋」把当前状态存成预设；这里可以删掉不要的。",
@@ -766,7 +766,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 			for (const preset of list) {
 				const chip = wrap.createDiv("pdf-ink-settings-chip");
 				const swatch = chip.createDiv("pdf-ink-swatch-mini");
-				swatch.style.backgroundColor = "color" in preset ? preset.color : "var(--text-faint)";
+				swatch.setCssStyles({ backgroundColor: "color" in preset ? preset.color : "var(--text-faint)" });
 				chip.createEl("span", { text: preset.name });
 				const remove = chip.createEl("button", {
 					cls: "pdf-ink-settings-remove",
@@ -780,7 +780,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 			}
 		}
 
-		containerEl.createEl("h3", { text: "颜色" });
+		new Setting(containerEl).setName("颜色").setHeading();
 
 		new Setting(containerEl)
 			.setName("最近使用的颜色")
@@ -792,7 +792,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 				}),
 			);
 
-		containerEl.createEl("h3", { text: "使用" });
+		new Setting(containerEl).setName("使用").setHeading();
 		containerEl.createEl("p", {
 			text:
 				"键位都在上面的「键位映射」里改。默认：P/H/E/S/L/A/R/O/G 切工具、1–9 快选调色板色、Ctrl+Z 撤销、Ctrl+Shift+Z 重做、Esc 退出绘制模式；按住 F（可改）= 临时橡皮，松开回到原来那支笔。",

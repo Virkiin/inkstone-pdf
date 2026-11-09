@@ -9,15 +9,7 @@ import {
 } from "./doc";
 import { History } from "./history";
 import type { EraserGeometry } from "./erase";
-import {
-	eraseInk,
-	flattenStroke,
-	polygonRegion,
-	rectRegion,
-	regionTouches,
-	splitByRegion,
-	swathRegion,
-} from "./erase";
+import { eraseInk } from "./erase";
 import { pressureWidthFactor } from "./geometry";
 import { strokeHitTest } from "./hittest";
 import { PageOverlay } from "./overlay";
@@ -36,7 +28,7 @@ import { recognizeStroke } from "./recognize";
 import type { RecognizedShape } from "./recognize";
 import { applyTransform, restoreStroke, snapshotStroke } from "./transform";
 import type { InkTransform, StrokeSnapshot } from "./transform";
-import type { InkDoc, Layer, ShapeKind, Stroke, ToolName } from "./types";
+import type { InkDoc, Layer, ShapeKind, Stroke } from "./types";
 import { SelectionMenu } from "./ui/selection-menu";
 import { PdfInkToolbar } from "./ui/toolbar";
 import type { Box } from "./ui/place";
@@ -484,8 +476,8 @@ export class PdfInkController {
 		for (const overlay of this.overlays.values()) {
 			const hideLive = mode === "live" || mode === "all";
 			const hideCommitted = mode === "all";
-			overlay.live.style.display = hideLive ? "none" : "";
-			overlay.committed.style.display = hideCommitted ? "none" : "";
+			overlay.live.setCssStyles({ display: hideLive ? "none" : "" });
+			overlay.committed.setCssStyles({ display: hideCommitted ? "none" : "" });
 		}
 	}
 
@@ -3396,7 +3388,7 @@ export class PdfInkController {
 		this.lastCommitAt = perf.now();
 		if (typeof requestAnimationFrame !== "function") return;
 		const started = this.lastCommitAt;
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			perf.add("commit.toFrame", perf.now() - started);
 		});
 	}
@@ -3405,7 +3397,7 @@ export class PdfInkController {
 	private measureStrokeFrame(): void {
 		if (typeof requestAnimationFrame !== "function") return;
 		const started = perf.now();
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			perf.add("stroke.toFrame", perf.now() - started);
 		});
 	}
@@ -3886,11 +3878,11 @@ export class PdfInkController {
 	private syncPointerTargets(stroking: boolean): void {
 		const hideText = stroking || this.drawing;
 		for (const overlay of this.overlays.values()) {
-			overlay.live.style.pointerEvents = hideText ? "auto" : "";
-			overlay.live.style.cursor = hideText ? "crosshair" : "";
+			overlay.live.setCssStyles({ pointerEvents: hideText ? "auto" : "" });
+			overlay.live.setCssStyles({ cursor: hideText ? "crosshair" : "" });
 			const layers = overlay.pageEl.querySelectorAll<HTMLElement>(".textLayer");
 			layers.forEach((layer) => {
-				layer.style.pointerEvents = hideText ? "none" : "";
+				layer.setCssStyles({ pointerEvents: hideText ? "none" : "" });
 			});
 		}
 	}
@@ -3952,12 +3944,14 @@ export class PdfInkController {
 	private showBrushRingAt(clientX: number, clientY: number, size: number): void {
 		const hostRect = this.containerEl.getBoundingClientRect();
 		const ring = this.ensureBrushRing();
-		ring.style.display = "block";
-		ring.style.width = `${size}px`;
-		ring.style.height = `${size}px`;
-		ring.style.transform = `translate3d(${clientX - hostRect.left - size / 2}px, ${
-			clientY - hostRect.top - size / 2
-		}px, 0)`;
+		ring.setCssStyles({ display: "block" });
+		ring.setCssStyles({ width: `${size}px` });
+		ring.setCssStyles({ height: `${size}px` });
+		ring.setCssStyles({
+			transform: `translate3d(${clientX - hostRect.left - size / 2}px, ${
+				clientY - hostRect.top - size / 2
+			}px, 0)`,
+		});
 	}
 
 	private trackBrushRing(event: PointerEvent, overlay: PageOverlay): void {
@@ -3974,7 +3968,7 @@ export class PdfInkController {
 	}
 
 	private hideBrushRing(): void {
-		if (this.brushRing) this.brushRing.style.display = "none";
+		if (this.brushRing) this.brushRing.setCssStyles({ display: "none" });
 	}
 
 	/** Translucent disc preview for the freehand eraser. */
@@ -3988,12 +3982,14 @@ export class PdfInkController {
 			160,
 		);
 		const cursor = this.ensureEraserCursor();
-		cursor.style.display = "block";
-		cursor.style.width = `${size}px`;
-		cursor.style.height = `${size}px`;
-		cursor.style.transform = `translate3d(${event.clientX - hostRect.left - size / 2}px, ${
-			event.clientY - hostRect.top - size / 2
-		}px, 0)`;
+		cursor.setCssStyles({ display: "block" });
+		cursor.setCssStyles({ width: `${size}px` });
+		cursor.setCssStyles({ height: `${size}px` });
+		cursor.setCssStyles({
+			transform: `translate3d(${event.clientX - hostRect.left - size / 2}px, ${
+				event.clientY - hostRect.top - size / 2
+			}px, 0)`,
+		});
 	}
 
 	/**
@@ -4016,7 +4012,7 @@ export class PdfInkController {
 	}
 
 	private readonly hideEraserCursor = (): void => {
-		if (this.eraserCursor) this.eraserCursor.style.display = "none";
+		if (this.eraserCursor) this.eraserCursor.setCssStyles({ display: "none" });
 	};
 
 	/** Pointer left the page (or the tool changed): drop every cursor hint. */
@@ -4053,12 +4049,14 @@ export class PdfInkController {
 			160,
 		);
 		const cursor = this.ensureEraserCursor();
-		cursor.style.display = "block";
-		cursor.style.width = `${size}px`;
-		cursor.style.height = `${size}px`;
-		cursor.style.transform = `translate3d(${clientX - hostRect.left - size / 2}px, ${
-			clientY - hostRect.top - size / 2
-		}px, 0)`;
+		cursor.setCssStyles({ display: "block" });
+		cursor.setCssStyles({ width: `${size}px` });
+		cursor.setCssStyles({ height: `${size}px` });
+		cursor.setCssStyles({
+			transform: `translate3d(${clientX - hostRect.left - size / 2}px, ${
+				clientY - hostRect.top - size / 2
+			}px, 0)`,
+		});
 	}
 
 	/** The translucent disc belongs to the freehand eraser only. */

@@ -315,8 +315,8 @@ export class PdfInkToolbar {
 				best = { left, top };
 			}
 		}
-		menu.style.left = `${best.left}px`;
-		menu.style.top = `${best.top}px`;
+		menu.setCssStyles({ left: `${best.left}px` });
+		menu.setCssStyles({ top: `${best.top}px` });
 		this.modeMenu = menu;
 		this.modeMenuAnchor = anchor;
 	}
@@ -390,7 +390,7 @@ export class PdfInkToolbar {
 			const swatch = this.doc.createElement("button");
 			swatch.type = "button";
 			swatch.className = "pdf-ink-quick-color";
-			swatch.style.backgroundColor = color;
+			swatch.setCssStyles({ backgroundColor: color });
 			swatch.setAttribute("aria-label", `${color}（长按替换为当前笔色）`);
 			setTooltip(swatch, `${color}（长按替换为当前笔色）`);
 			if (color.toLowerCase() === current) swatch.classList.add("is-active");
@@ -430,10 +430,10 @@ export class PdfInkToolbar {
 	}
 
 	private applyPosition(left: number, top: number): void {
-		this.el.style.left = `${left}px`;
-		this.el.style.top = `${top}px`;
-		this.el.style.right = "auto";
-		this.el.style.bottom = "auto";
+		this.el.setCssStyles({ left: `${left}px` });
+		this.el.setCssStyles({ top: `${top}px` });
+		this.el.setCssStyles({ right: "auto" });
+		this.el.setCssStyles({ bottom: "auto" });
 	}
 
 	private onToolbarPointerDown(event: PointerEvent): void {
@@ -572,7 +572,7 @@ export class PdfInkToolbar {
 			button.classList.toggle("is-active", this.plugin.tool === tool);
 		}
 		const brush = this.currentBrush();
-		this.colorDot.style.backgroundColor = brush.color;
+		this.colorDot.setCssStyles({ backgroundColor: brush.color });
 		this.colorChip.classList.toggle("is-dim", this.plugin.tool === "eraser");
 		this.renderQuickColors();
 

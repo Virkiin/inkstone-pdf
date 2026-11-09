@@ -126,8 +126,8 @@ export class SelectionMenu {
 		}
 		left = Math.max(8, Math.min(left, window.innerWidth - rect.width - 8));
 		top = Math.max(8, Math.min(top, window.innerHeight - rect.height - 8));
-		el.style.left = `${left}px`;
-		el.style.top = `${top}px`;
+		el.setCssStyles({ left: `${left}px` });
+		el.setCssStyles({ top: `${top}px` });
 		this.el = el;
 
 		window.setTimeout(() => {

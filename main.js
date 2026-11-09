@@ -5658,10 +5658,10 @@ var PageOverlay = class {
       canvas.width = Math.max(1, Math.round(width * dpr));
       canvas.height = Math.max(1, Math.round(height * dpr));
     }
-    this.committed.style.width = `${width}px`;
-    this.committed.style.height = `${height}px`;
-    this.live.style.width = `${width}px`;
-    this.live.style.height = `${height}px`;
+    this.committed.setCssStyles({ width: `${width}px` });
+    this.committed.setCssStyles({ height: `${height}px` });
+    this.live.setCssStyles({ width: `${width}px` });
+    this.live.setCssStyles({ height: `${height}px` });
     this.ctxCommitted?.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.ctxLive?.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.ctxLayer?.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -5962,7 +5962,7 @@ var PageOverlay = class {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.globalAlpha = 1;
     ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
-    this.live.style.opacity = "";
+    this.live.setCssStyles({ opacity: "" });
     const frame = options.frame;
     if (!frame) return;
     if (!Number.isFinite(frame.hw) || !Number.isFinite(frame.hh)) return;
@@ -6090,7 +6090,7 @@ var PageOverlay = class {
     } finally {
       done?.();
     }
-    this.live.style.opacity = "";
+    this.live.setCssStyles({ opacity: "" });
     this.clearLive();
     this.liveStrokeId = null;
     this.liveDrawn = 0;
@@ -6170,7 +6170,7 @@ var PageOverlay = class {
     if (!ctx) return;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
-    this.live.style.opacity = "";
+    this.live.setCssStyles({ opacity: "" });
     this.liveDirty = null;
   }
   destroy() {
@@ -6645,8 +6645,8 @@ var SelectionMenu = class {
     }
     left = Math.max(8, Math.min(left, window.innerWidth - rect.width - 8));
     top = Math.max(8, Math.min(top, window.innerHeight - rect.height - 8));
-    el2.style.left = `${left}px`;
-    el2.style.top = `${top}px`;
+    el2.setCssStyles({ left: `${left}px` });
+    el2.setCssStyles({ top: `${top}px` });
     this.el = el2;
     window.setTimeout(() => {
       this.doc.addEventListener("pointerdown", this.onOutside, true);
@@ -6786,8 +6786,8 @@ function placeFloating(el2, anchor, options = {}) {
       best = { left, top };
     }
   }
-  el2.style.left = `${Math.round(best.left)}px`;
-  el2.style.top = `${Math.round(best.top)}px`;
+  el2.setCssStyles({ left: `${Math.round(best.left)}px` });
+  el2.setCssStyles({ top: `${Math.round(best.top)}px` });
 }
 function boxOf(element) {
   const rect = element.getBoundingClientRect();
@@ -7084,7 +7084,7 @@ var BrushPanel = class {
       swatch.classList.add("is-eraser");
       (0, import_obsidian2.setIcon)(swatch, "eraser");
     } else {
-      swatch.style.backgroundColor = preset.color;
+      swatch.setCssStyles({ backgroundColor: preset.color });
     }
     const name = this.doc.createElement("span");
     name.className = "pdf-ink-preset-name";
@@ -7164,16 +7164,16 @@ var BrushPanel = class {
     }
     this.doc.body.appendChild(menu);
     const rect = anchor.getBoundingClientRect();
-    menu.style.left = `${Math.round(rect.left)}px`;
-    menu.style.top = `${Math.round(rect.bottom + 4)}px`;
-    menu.style.position = "fixed";
+    menu.setCssStyles({ left: `${Math.round(rect.left)}px` });
+    menu.setCssStyles({ top: `${Math.round(rect.bottom + 4)}px` });
+    menu.setCssStyles({ position: "fixed" });
     this.menu = menu;
     const menuRect = menu.getBoundingClientRect();
     if (menuRect.bottom > window.innerHeight - 8) {
-      menu.style.top = `${Math.round(rect.top - menuRect.height - 4)}px`;
+      menu.setCssStyles({ top: `${Math.round(rect.top - menuRect.height - 4)}px` });
     }
     if (menuRect.right > window.innerWidth - 8) {
-      menu.style.left = `${Math.round(window.innerWidth - menuRect.width - 8)}px`;
+      menu.setCssStyles({ left: `${Math.round(window.innerWidth - menuRect.width - 8)}px` });
     }
   }
   closeMenu() {
@@ -7222,7 +7222,7 @@ var BrushPanel = class {
       const swatch = this.doc.createElement("button");
       swatch.type = "button";
       swatch.className = "pdf-ink-panel-swatch";
-      swatch.style.backgroundColor = color;
+      swatch.setCssStyles({ backgroundColor: color });
       swatch.dataset.index = String(index);
       swatch.setAttribute("aria-label", color);
       (0, import_obsidian2.setTooltip)(swatch, `${color}\uFF08\u957F\u6309\u6539\u8272\uFF0C\u62D6\u51FA\u9762\u677F\u5220\u9664\uFF09`);
@@ -7266,14 +7266,14 @@ var BrushPanel = class {
         this.cancelHold();
         swatch.classList.add("is-dragging");
       }
-      if (dragging) swatch.style.transform = `translate(${dx}px, ${dy}px)`;
+      if (dragging) swatch.setCssStyles({ transform: `translate(${dx}px, ${dy}px)` });
     };
     const onUp = (event) => {
       if (event.pointerId !== pointerId) return;
       clean();
       this.cancelHold();
       swatch.classList.remove("is-dragging");
-      swatch.style.transform = "";
+      swatch.setCssStyles({ transform: "" });
       const panel = this.el;
       if (dragging && panel) {
         const rect = panel.getBoundingClientRect();
@@ -7332,7 +7332,7 @@ var BrushPanel = class {
     el2.addEventListener("pointerdown", (event) => event.stopPropagation());
     const preview = this.doc.createElement("div");
     preview.className = "pdf-ink-color-editor-preview";
-    preview.style.backgroundColor = initial;
+    preview.setCssStyles({ backgroundColor: initial });
     el2.appendChild(preview);
     const hexInput = this.doc.createElement("input");
     hexInput.type = "text";
@@ -7340,7 +7340,7 @@ var BrushPanel = class {
     hexInput.value = initial;
     hexInput.spellcheck = false;
     const applyHex = (hex, updateInput) => {
-      preview.style.backgroundColor = hex;
+      preview.setCssStyles({ backgroundColor: hex });
       if (updateInput) hexInput.value = hex;
       this.plugin.setPaletteSlot(index, hex);
       this.refresh();
@@ -7363,9 +7363,11 @@ var BrushPanel = class {
       return slider;
     };
     const paintGradients = () => {
-      hueSlider.style.backgroundImage = "linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)";
-      satSlider.style.backgroundImage = `linear-gradient(to right, hsl(${hue} 0% ${light}%), hsl(${hue} 100% ${light}%))`;
-      lightSlider.style.backgroundImage = `linear-gradient(to right, #000, hsl(${hue} ${sat}% 50%), #fff)`;
+      hueSlider.setCssStyles({
+        backgroundImage: "linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)"
+      });
+      satSlider.setCssStyles({ backgroundImage: `linear-gradient(to right, hsl(${hue} 0% ${light}%), hsl(${hue} 100% ${light}%))` });
+      lightSlider.setCssStyles({ backgroundImage: `linear-gradient(to right, #000, hsl(${hue} ${sat}% 50%), #fff)` });
     };
     const hueSlider = row("\u8272\u76F8", 360, hue, (next) => {
       hue = next;
@@ -7483,8 +7485,8 @@ var BrushPanel = class {
     const dpr = clamp(window.devicePixelRatio || 1, 1, 2);
     canvas.width = Math.round(PREVIEW_WIDTH * dpr);
     canvas.height = Math.round(PREVIEW_HEIGHT * dpr);
-    canvas.style.width = `${PREVIEW_WIDTH}px`;
-    canvas.style.height = `${PREVIEW_HEIGHT}px`;
+    canvas.setCssStyles({ width: `${PREVIEW_WIDTH}px` });
+    canvas.setCssStyles({ height: `${PREVIEW_HEIGHT}px` });
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
     const stroke = this.previewStroke();
@@ -7843,8 +7845,8 @@ var PdfInkToolbar = class {
         best = { left, top };
       }
     }
-    menu.style.left = `${best.left}px`;
-    menu.style.top = `${best.top}px`;
+    menu.setCssStyles({ left: `${best.left}px` });
+    menu.setCssStyles({ top: `${best.top}px` });
     this.modeMenu = menu;
     this.modeMenuAnchor = anchor;
   }
@@ -7904,7 +7906,7 @@ var PdfInkToolbar = class {
       const swatch = this.doc.createElement("button");
       swatch.type = "button";
       swatch.className = "pdf-ink-quick-color";
-      swatch.style.backgroundColor = color;
+      swatch.setCssStyles({ backgroundColor: color });
       swatch.setAttribute("aria-label", `${color}\uFF08\u957F\u6309\u66FF\u6362\u4E3A\u5F53\u524D\u7B14\u8272\uFF09`);
       (0, import_obsidian3.setTooltip)(swatch, `${color}\uFF08\u957F\u6309\u66FF\u6362\u4E3A\u5F53\u524D\u7B14\u8272\uFF09`);
       if (color.toLowerCase() === current) swatch.classList.add("is-active");
@@ -7941,10 +7943,10 @@ var PdfInkToolbar = class {
     );
   }
   applyPosition(left, top) {
-    this.el.style.left = `${left}px`;
-    this.el.style.top = `${top}px`;
-    this.el.style.right = "auto";
-    this.el.style.bottom = "auto";
+    this.el.setCssStyles({ left: `${left}px` });
+    this.el.setCssStyles({ top: `${top}px` });
+    this.el.setCssStyles({ right: "auto" });
+    this.el.setCssStyles({ bottom: "auto" });
   }
   onToolbarPointerDown(event) {
     event.stopPropagation();
@@ -8002,7 +8004,7 @@ var PdfInkToolbar = class {
       button.classList.toggle("is-active", this.plugin.tool === tool);
     }
     const brush = this.currentBrush();
-    this.colorDot.style.backgroundColor = brush.color;
+    this.colorDot.setCssStyles({ backgroundColor: brush.color });
     this.colorChip.classList.toggle("is-dim", this.plugin.tool === "eraser");
     this.renderQuickColors();
     this.undoButton.disabled = !this.controller.history.canUndo;
@@ -8294,7 +8296,7 @@ var PdfInkController = class {
       this.rememberHover(event);
     };
     this.hideEraserCursor = () => {
-      if (this.eraserCursor) this.eraserCursor.style.display = "none";
+      if (this.eraserCursor) this.eraserCursor.setCssStyles({ display: "none" });
     };
     /** Pointer left the page (or the tool changed): drop every cursor hint. */
     this.hideHoverCursor = () => {
@@ -8427,8 +8429,8 @@ var PdfInkController = class {
     for (const overlay of this.overlays.values()) {
       const hideLive = mode === "live" || mode === "all";
       const hideCommitted = mode === "all";
-      overlay.live.style.display = hideLive ? "none" : "";
-      overlay.committed.style.display = hideCommitted ? "none" : "";
+      overlay.live.setCssStyles({ display: hideLive ? "none" : "" });
+      overlay.committed.setCssStyles({ display: hideCommitted ? "none" : "" });
     }
   }
   /** How many canvases we currently keep alive, for the diagnostics export. */
@@ -10816,7 +10818,7 @@ var PdfInkController = class {
     this.lastCommitAt = perf.now();
     if (typeof requestAnimationFrame !== "function") return;
     const started = this.lastCommitAt;
-    requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       perf.add("commit.toFrame", perf.now() - started);
     });
   }
@@ -10824,7 +10826,7 @@ var PdfInkController = class {
   measureStrokeFrame() {
     if (typeof requestAnimationFrame !== "function") return;
     const started = perf.now();
-    requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       perf.add("stroke.toFrame", perf.now() - started);
     });
   }
@@ -11232,11 +11234,11 @@ var PdfInkController = class {
   syncPointerTargets(stroking) {
     const hideText = stroking || this.drawing;
     for (const overlay of this.overlays.values()) {
-      overlay.live.style.pointerEvents = hideText ? "auto" : "";
-      overlay.live.style.cursor = hideText ? "crosshair" : "";
+      overlay.live.setCssStyles({ pointerEvents: hideText ? "auto" : "" });
+      overlay.live.setCssStyles({ cursor: hideText ? "crosshair" : "" });
       const layers = overlay.pageEl.querySelectorAll(".textLayer");
       layers.forEach((layer) => {
-        layer.style.pointerEvents = hideText ? "none" : "";
+        layer.setCssStyles({ pointerEvents: hideText ? "none" : "" });
       });
     }
   }
@@ -11290,10 +11292,12 @@ var PdfInkController = class {
   showBrushRingAt(clientX, clientY, size) {
     const hostRect = this.containerEl.getBoundingClientRect();
     const ring = this.ensureBrushRing();
-    ring.style.display = "block";
-    ring.style.width = `${size}px`;
-    ring.style.height = `${size}px`;
-    ring.style.transform = `translate3d(${clientX - hostRect.left - size / 2}px, ${clientY - hostRect.top - size / 2}px, 0)`;
+    ring.setCssStyles({ display: "block" });
+    ring.setCssStyles({ width: `${size}px` });
+    ring.setCssStyles({ height: `${size}px` });
+    ring.setCssStyles({
+      transform: `translate3d(${clientX - hostRect.left - size / 2}px, ${clientY - hostRect.top - size / 2}px, 0)`
+    });
   }
   trackBrushRing(event, overlay) {
     if (!this.containerEl.classList.contains("pdf-ink-cursor-ring")) return;
@@ -11308,7 +11312,7 @@ var PdfInkController = class {
     this.showBrushRingAt(event.clientX, event.clientY, size);
   }
   hideBrushRing() {
-    if (this.brushRing) this.brushRing.style.display = "none";
+    if (this.brushRing) this.brushRing.setCssStyles({ display: "none" });
   }
   /** Translucent disc preview for the freehand eraser. */
   showEraserDisc(event, pageEl) {
@@ -11321,10 +11325,12 @@ var PdfInkController = class {
       160
     );
     const cursor = this.ensureEraserCursor();
-    cursor.style.display = "block";
-    cursor.style.width = `${size}px`;
-    cursor.style.height = `${size}px`;
-    cursor.style.transform = `translate3d(${event.clientX - hostRect.left - size / 2}px, ${event.clientY - hostRect.top - size / 2}px, 0)`;
+    cursor.setCssStyles({ display: "block" });
+    cursor.setCssStyles({ width: `${size}px` });
+    cursor.setCssStyles({ height: `${size}px` });
+    cursor.setCssStyles({
+      transform: `translate3d(${event.clientX - hostRect.left - size / 2}px, ${event.clientY - hostRect.top - size / 2}px, 0)`
+    });
   }
   /**
    * Remembers where the pen is hovering (no contact needed). Paste drops the
@@ -11363,10 +11369,12 @@ var PdfInkController = class {
       160
     );
     const cursor = this.ensureEraserCursor();
-    cursor.style.display = "block";
-    cursor.style.width = `${size}px`;
-    cursor.style.height = `${size}px`;
-    cursor.style.transform = `translate3d(${clientX - hostRect.left - size / 2}px, ${clientY - hostRect.top - size / 2}px, 0)`;
+    cursor.setCssStyles({ display: "block" });
+    cursor.setCssStyles({ width: `${size}px` });
+    cursor.setCssStyles({ height: `${size}px` });
+    cursor.setCssStyles({
+      transform: `translate3d(${clientX - hostRect.left - size / 2}px, ${clientY - hostRect.top - size / 2}px, 0)`
+    });
   }
   /** The translucent disc belongs to the freehand eraser only. */
   eraserDiscVisible() {
@@ -11986,7 +11994,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
   display() {
     const { containerEl } = this;
     while (containerEl.firstChild) containerEl.removeChild(containerEl.firstChild);
-    containerEl.createEl("h2", { text: "PDF Ink \u8BBE\u7F6E" });
+    new import_obsidian5.Setting(containerEl).setName("PDF Ink \u8BBE\u7F6E").setHeading();
     new import_obsidian5.Setting(containerEl).setName("\u6279\u6CE8\u6570\u636E\u6587\u4EF6\u5939").setDesc(
       "\u6BCF\u4EFD PDF \u7684\u7B14\u8FF9\u4FDD\u5B58\u4E3A\u8BE5\u6587\u4EF6\u5939\u4E0B\u7684\u540C\u540D JSON\uFF08\u5982 \u9644\u4EF6/Ink \u6807\u6CE8/\u8D44\u6599/\u9AD8\u6570.pdf.json\uFF09\uFF0C\u968F Obsidian Sync \u540C\u6B65\u3002"
     ).addText(
@@ -11995,7 +12003,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "\u8F93\u5165\u65B9\u5F0F" });
+    new import_obsidian5.Setting(containerEl).setName("\u8F93\u5165\u65B9\u5F0F").setHeading();
     new import_obsidian5.Setting(containerEl).setName("\u786C\u4EF6").setDesc(
       "\u89E6\u5C4F\u5E73\u677F\uFF08iPad / Surface\uFF09\u7B14\u5C16\u4E0E\u7B14\u753B\u5728\u540C\u4E00\u70B9\uFF0C\u505C\u4F4F/\u53CC\u51FB\u8FD9\u7C7B\u624B\u52BF\u770B\u5F97\u89C1\uFF1B\u6570\u4F4D\u677F\uFF08Wacom / \u9AD8\u6F2B / \u7ED8\u738B / XPPen\uFF09\u624B\u5728\u677F\u4E0A\u3001\u773C\u5728\u5C4F\u4E0A\uFF0C\u624B\u52BF\u770B\u4E0D\u89C1\u4E5F\u96BE\u63A7\u3002\u9009\u300C\u6570\u4F4D\u677F\u300D\u4F1A\u5173\u6389\u624B\u52BF\u5E76\u542F\u7528\u4FA7\u952E\u4E34\u65F6\u6A61\u76AE\uFF0C\u4E4B\u540E\u6BCF\u4E00\u9879\u4ECD\u53EF\u5355\u72EC\u6539\u3002"
     ).addDropdown(
@@ -12013,7 +12021,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         this.display();
       })
     );
-    containerEl.createEl("h3", { text: "\u4E66\u5199" });
+    new import_obsidian5.Setting(containerEl).setName("\u4E66\u5199").setHeading();
     new import_obsidian5.Setting(containerEl).setName("\u58A8\u8FF9\u6E05\u6670\u5EA6 / \u6D41\u7545\u5EA6").setDesc(
       "\u753B\u5E03\u50CF\u7D20\u9884\u7B97\u3002\u9884\u7B97\u8D8A\u5C0F\uFF0C\u6BCF\u6B21\u843D\u7B14\u540E\u6D4F\u89C8\u5668\u8981\u4E0A\u4F20/\u91CD\u7ED8\u7684\u7EB9\u7406\u8D8A\u5C0F\u3001\u4E66\u5199\u8D8A\u987A\uFF1B\u9884\u7B97\u8D8A\u5927\uFF0C\u653E\u5927\u540E\u7B14\u8FF9\u8D8A\u9510\u5229\u3002\u7F29\u653E\u4F1A\u81EA\u52A8\u9002\u914D\uFF1A\u770B\u6574\u9875\u65F6\u901A\u5E38\u662F 2 \u500D\uFF0C\u653E\u5927\u540E\u6309\u9884\u7B97\u5C01\u9876\u3002"
     ).addDropdown(
@@ -12082,7 +12090,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "\u952E\u4F4D\u6620\u5C04" });
+    new import_obsidian5.Setting(containerEl).setName("\u952E\u4F4D\u6620\u5C04").setHeading();
     containerEl.createEl("p", {
       text: "\u53EA\u5728 PDF \u89C6\u56FE\u662F\u5F53\u524D\u9762\u677F\u3001\u4E14\u7126\u70B9\u4E0D\u5728\u8F93\u5165\u6846\u65F6\u751F\u6548\u3002\u6570\u4F4D\u677F\u9A71\u52A8\u6216\u7B14\u7684\u4FA7\u952E\u6620\u5C04\u51FA\u6765\u7684\u952E\u76D8\u6309\u952E\uFF0C\u76F4\u63A5\u586B\u5728\u8FD9\u91CC\u3002\u70B9\u8F93\u5165\u6846\u540E\u6309\u4E00\u4E2A\u952E\u5373\u5F55\u5236\uFF0CEsc \u6E05\u7A7A\u3002\u6CE8\u610F\u522B\u628A\u540C\u4E00\u4E2A\u952E\u4E5F\u7ED1\u5230 Obsidian \u81EA\u5E26\u5FEB\u6377\u952E\u4E0A\uFF0C\u5426\u5219\u4F1A\u6267\u884C\u4E24\u6B21\u3002"
     });
@@ -12093,7 +12101,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
     const bindings = resolveBindings(this.plugin.settings.keyBindings);
     const inputs = [];
     for (const group of ["\u5DE5\u5177", "\u989C\u8272"]) {
-      containerEl.createEl("h4", { text: group });
+      new import_obsidian5.Setting(containerEl).setName(group).setHeading();
       for (const action of ACTIONS.filter((entry) => entry.group === group)) {
         const el2 = this.keyRow(
           containerEl,
@@ -12136,7 +12144,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         this.display();
       })
     );
-    containerEl.createEl("h3", { text: "\u94A2\u7B14" });
+    new import_obsidian5.Setting(containerEl).setName("\u94A2\u7B14").setHeading();
     new import_obsidian5.Setting(containerEl).setName("\u9ED8\u8BA4\u989C\u8272").addColorPicker(
       (picker) => picker.setValue(this.plugin.settings.penColor).onChange(async (value) => {
         this.plugin.settings.penColor = value;
@@ -12155,7 +12163,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "\u8367\u5149\u7B14" });
+    new import_obsidian5.Setting(containerEl).setName("\u8367\u5149\u7B14").setHeading();
     new import_obsidian5.Setting(containerEl).setName("\u9ED8\u8BA4\u989C\u8272").addColorPicker(
       (picker) => picker.setValue(this.plugin.settings.highlighterColor).onChange(async (value) => {
         this.plugin.settings.highlighterColor = value;
@@ -12174,7 +12182,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "\u6A61\u76AE" });
+    new import_obsidian5.Setting(containerEl).setName("\u6A61\u76AE").setHeading();
     new import_obsidian5.Setting(containerEl).setName("\u64E6\u9664\u65B9\u5F0F").setDesc(
       "\u6D82\u62B9\uFF1A\u53EA\u64E6\u6389\u6846\u9009\u5230\u7684\u90E8\u5206\uFF0C\u7B14\u8FF9\u4F1A\u88AB\u5207\u6210\u51E0\u6BB5\uFF1B\u6574\u7B14\uFF1A\u6846\u5230\u4E00\u70B9\u5C31\u6574\u6761\u5220\u9664\u3002"
     ).addDropdown(
@@ -12199,7 +12207,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "\u624B\u52BF" });
+    new import_obsidian5.Setting(containerEl).setName("\u624B\u52BF").setHeading();
     containerEl.createEl("p", {
       text: "\u8FD9\u7EC4\u624B\u52BF\u4F9D\u8D56\u300C\u770B\u5F97\u89C1\u7B14\u5C16\u505C\u5728\u54EA\u91CC\u300D\uFF0C\u9002\u5408\u89E6\u5C4F\u5E73\u677F\uFF1B\u6570\u4F4D\u677F\u4E0A\u624B\u5728\u677F\u3001\u773C\u5728\u5C4F\uFF0C\u505C\u4F4F\u770B\u4E0D\u89C1\uFF0C\u8BEF\u89E6\u7387\u9AD8\u3002\u5728\u300C\u8F93\u5165\u65B9\u5F0F \u2192 \u786C\u4EF6\u300D\u91CC\u9009\u6570\u4F4D\u677F\u4F1A\u81EA\u52A8\u5173\u6389\u5B83\u4EEC\u3002"
     });
@@ -12253,7 +12261,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "\u81EA\u52A8\u8BC6\u522B\u56FE\u5F62" });
+    new import_obsidian5.Setting(containerEl).setName("\u81EA\u52A8\u8BC6\u522B\u56FE\u5F62").setHeading();
     new import_obsidian5.Setting(containerEl).setName("\u753B\u5B8C\u81EA\u52A8\u53D8\u6807\u51C6\u56FE\u5F62").setDesc("\u628A\u5E72\u51C0\u7684\u76F4\u7EBF\u3001\u7BAD\u5934\u3001\u77E9\u5F62\u3001\u692D\u5706\u3001\u4E09\u89D2/\u591A\u8FB9\u5F62\u66FF\u6362\u6210\u6807\u51C6\u56FE\u5F62\uFF1B\u624B\u5199\u6587\u5B57\u4E0D\u4F1A\u88AB\u8BC6\u522B\u3002").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.autoShapeEnabled).onChange(async (value) => {
         this.plugin.settings.autoShapeEnabled = value;
@@ -12272,7 +12280,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "\u5E38\u7528\u8272\u4E0E\u8C03\u8272\u677F" });
+    new import_obsidian5.Setting(containerEl).setName("\u5E38\u7528\u8272\u4E0E\u8C03\u8272\u677F").setHeading();
     new import_obsidian5.Setting(containerEl).setName("\u5DE5\u5177\u680F\u5E38\u7528\u8272").setDesc(
       "\u5DE5\u5177\u680F\u4E0A\u5E38\u9A7B\u7684\u4E00\u884C\u989C\u8272\uFF0C\u53EA\u663E\u793A 1\u20136 \u683C\u3002\u70B9\u4E00\u4E0B\u5207\u6362\u989C\u8272\uFF1B\u5728\u5DE5\u5177\u680F\u4E0A\u957F\u6309\u67D0\u4E00\u683C\u4F1A\u7528\u5F53\u524D\u7B14\u8272\u66FF\u6362\u5B83\u3002"
     );
@@ -12342,7 +12350,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         renderPalette();
       })
     );
-    containerEl.createEl("h3", { text: "\u7B14\u5237\u9884\u8BBE" });
+    new import_obsidian5.Setting(containerEl).setName("\u7B14\u5237\u9884\u8BBE").setHeading();
     containerEl.createEl("p", {
       text: "\u9884\u8BBE\u662F\u300C\u989C\u8272 + \u7C97\u7EC6 + \u4E0D\u900F\u660E\u5EA6\u300D\u7684\u6574\u5957\u7EC4\u5408\u3002\u5728\u5DE5\u5177\u680F\u53CC\u51FB/\u957F\u6309\u7B14\u5237\u6309\u94AE\u6253\u5F00\u9762\u677F\uFF0C\u70B9\u300C\uFF0B\u300D\u628A\u5F53\u524D\u72B6\u6001\u5B58\u6210\u9884\u8BBE\uFF1B\u8FD9\u91CC\u53EF\u4EE5\u5220\u6389\u4E0D\u8981\u7684\u3002"
     });
@@ -12364,7 +12372,7 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
       for (const preset of list) {
         const chip = wrap.createDiv("pdf-ink-settings-chip");
         const swatch = chip.createDiv("pdf-ink-swatch-mini");
-        swatch.style.backgroundColor = "color" in preset ? preset.color : "var(--text-faint)";
+        swatch.setCssStyles({ backgroundColor: "color" in preset ? preset.color : "var(--text-faint)" });
         chip.createEl("span", { text: preset.name });
         const remove = chip.createEl("button", {
           cls: "pdf-ink-settings-remove",
@@ -12377,14 +12385,14 @@ var PdfInkSettingTab = class extends import_obsidian5.PluginSettingTab {
         });
       }
     }
-    containerEl.createEl("h3", { text: "\u989C\u8272" });
+    new import_obsidian5.Setting(containerEl).setName("\u989C\u8272").setHeading();
     new import_obsidian5.Setting(containerEl).setName("\u6700\u8FD1\u4F7F\u7528\u7684\u989C\u8272").setDesc("\u5DE5\u5177\u680F\u8C03\u8272\u677F\u4F1A\u81EA\u52A8\u8BB0\u5F55\u6700\u8FD1\u7528\u8FC7\u7684\u989C\u8272\uFF0C\u8FD9\u91CC\u53EF\u4EE5\u6E05\u7A7A\u3002").addButton(
       (button) => button.setButtonText("\u6E05\u7A7A").onClick(async () => {
         this.plugin.settings.recentColors = [];
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "\u4F7F\u7528" });
+    new import_obsidian5.Setting(containerEl).setName("\u4F7F\u7528").setHeading();
     containerEl.createEl("p", {
       text: "\u952E\u4F4D\u90FD\u5728\u4E0A\u9762\u7684\u300C\u952E\u4F4D\u6620\u5C04\u300D\u91CC\u6539\u3002\u9ED8\u8BA4\uFF1AP/H/E/S/L/A/R/O/G \u5207\u5DE5\u5177\u30011\u20139 \u5FEB\u9009\u8C03\u8272\u677F\u8272\u3001Ctrl+Z \u64A4\u9500\u3001Ctrl+Shift+Z \u91CD\u505A\u3001Esc \u9000\u51FA\u7ED8\u5236\u6A21\u5F0F\uFF1B\u6309\u4F4F F\uFF08\u53EF\u6539\uFF09= \u4E34\u65F6\u6A61\u76AE\uFF0C\u677E\u5F00\u56DE\u5230\u539F\u6765\u90A3\u652F\u7B14\u3002"
     });
@@ -12991,8 +12999,8 @@ var PdfInkLayersPopover = class {
     const rect = panel.getBoundingClientRect();
     const view = doc.defaultView ?? window;
     if (!anchor || !anchor.isConnected) {
-      panel.style.left = `${Math.max(8, (view.innerWidth - rect.width) / 2)}px`;
-      panel.style.top = `${Math.max(8, (view.innerHeight - rect.height) / 3)}px`;
+      panel.setCssStyles({ left: `${Math.max(8, (view.innerWidth - rect.width) / 2)}px` });
+      panel.setCssStyles({ top: `${Math.max(8, (view.innerHeight - rect.height) / 3)}px` });
       return;
     }
     const anchorRect = anchor.getBoundingClientRect();
@@ -13021,8 +13029,8 @@ var PdfInkLayersPopover = class {
         best = { left, top };
       }
     }
-    panel.style.left = `${best.left}px`;
-    panel.style.top = `${best.top}px`;
+    panel.setCssStyles({ left: `${best.left}px` });
+    panel.setCssStyles({ top: `${best.top}px` });
   }
 };
 function clamp2(value, min, max) {
@@ -13067,8 +13075,6 @@ var PdfInkPlugin = class extends import_obsidian9.Plugin {
     this.globalPointerDown = (event) => {
       this.handleGlobalPointerDown(event);
     };
-    /** injected <style> that disables other plugins' backdrop-filter */
-    this.blurShieldEl = null;
     /**
      * Long tasks (> 50 ms) block the pen path no matter how cheap our own
      * drawing is, so record them to tell "our code is slow" apart from
@@ -13331,8 +13337,7 @@ var PdfInkPlugin = class extends import_obsidian9.Plugin {
     for (const controller of this.controllers.values()) controller.destroy();
     this.controllers.clear();
     this.lastController = null;
-    this.blurShieldEl?.remove();
-    this.blurShieldEl = null;
+    document.body.classList.remove("inkstone-pdf-blur-shield");
     await this.storage.flushAll();
   }
   /* ------------------------------------------------------------------ */
@@ -13437,9 +13442,9 @@ var PdfInkPlugin = class extends import_obsidian9.Plugin {
         ctx.stroke();
         frames++;
         if (frames >= 24) resolve();
-        else requestAnimationFrame(step);
+        else window.requestAnimationFrame(step);
       };
-      requestAnimationFrame(step);
+      window.requestAnimationFrame(step);
     });
     const sorted = [...frameTimes].sort((a, b) => a - b);
     const frameP95 = Math.round((sorted[Math.floor(sorted.length * 0.95)] ?? 0) * 10) / 10;
@@ -13465,12 +13470,12 @@ var PdfInkPlugin = class extends import_obsidian9.Plugin {
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
-    canvas.style.position = "absolute";
-    canvas.style.left = "0";
-    canvas.style.top = "0";
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    canvas.style.pointerEvents = "none";
+    canvas.setCssStyles({ position: "absolute" });
+    canvas.setCssStyles({ left: "0" });
+    canvas.setCssStyles({ top: "0" });
+    canvas.setCssStyles({ width: `${width}px` });
+    canvas.setCssStyles({ height: `${height}px` });
+    canvas.setCssStyles({ pointerEvents: "none" });
     pageEl.appendChild(canvas);
     const ctx = canvas.getContext("2d");
     if (!ctx) {
@@ -13493,9 +13498,9 @@ var PdfInkPlugin = class extends import_obsidian9.Plugin {
         ctx.stroke();
         frames++;
         if (frames >= 24) resolve();
-        else requestAnimationFrame(step);
+        else window.requestAnimationFrame(step);
       };
-      requestAnimationFrame(step);
+      window.requestAnimationFrame(step);
     });
     canvas.remove();
     const sorted = [...gaps].sort((a, b) => a - b);
@@ -13579,24 +13584,7 @@ var PdfInkPlugin = class extends import_obsidian9.Plugin {
    * the whole tree would cost more than it saves.
    */
   applyBlurShield() {
-    this.blurShieldEl?.remove();
-    this.blurShieldEl = null;
-    if (!this.settings.blurShield) return;
-    const style = document.createElement("style");
-    style.id = "pdf-ink-blur-shield";
-    style.textContent = [
-      ":is(#editingToolbarModalBar, #editingToolbarPopoverBar) {",
-      "	backdrop-filter: none !important;",
-      "	-webkit-backdrop-filter: none !important;",
-      "}",
-      ":is(#editingToolbarModalBar, #editingToolbarPopoverBar) *::before,",
-      ":is(#editingToolbarModalBar, #editingToolbarPopoverBar) *::after {",
-      "	backdrop-filter: none !important;",
-      "	-webkit-backdrop-filter: none !important;",
-      "}"
-    ].join("\n");
-    document.head.appendChild(style);
-    this.blurShieldEl = style;
+    document.body.classList.toggle("inkstone-pdf-blur-shield", this.settings.blurShield);
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -13760,8 +13748,8 @@ var PdfInkPlugin = class extends import_obsidian9.Plugin {
     let top = y + gap;
     if (left > maxLeft) left = x - gap - w;
     if (top > maxTop) top = y - gap - h;
-    hud.style.left = `${Math.round(clamp(left, 8, maxLeft))}px`;
-    hud.style.top = `${Math.round(clamp(top, 8, maxTop))}px`;
+    hud.setCssStyles({ left: `${Math.round(clamp(left, 8, maxLeft))}px` });
+    hud.setCssStyles({ top: `${Math.round(clamp(top, 8, maxTop))}px` });
   }
   endShiftAdjust() {
     this.shiftAdjust = null;
@@ -14025,7 +14013,7 @@ var PdfInkPlugin = class extends import_obsidian9.Plugin {
       perf: perf.snapshot(),
       log: this.logLines.slice(-150)
     };
-    const dir = this.manifest?.dir || ".obsidian/plugins/pdf-ink";
+    const dir = this.manifest?.dir || `${this.app.vault.configDir}/plugins/inkstone-pdf`;
     try {
       await this.app.vault.adapter.write(
         `${dir}/debug.json`,

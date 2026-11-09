@@ -139,10 +139,10 @@ export class PageOverlay {
 			canvas.width = Math.max(1, Math.round(width * dpr));
 			canvas.height = Math.max(1, Math.round(height * dpr));
 		}
-		this.committed.style.width = `${width}px`;
-		this.committed.style.height = `${height}px`;
-		this.live.style.width = `${width}px`;
-		this.live.style.height = `${height}px`;
+		this.committed.setCssStyles({ width: `${width}px` });
+		this.committed.setCssStyles({ height: `${height}px` });
+		this.live.setCssStyles({ width: `${width}px` });
+		this.live.setCssStyles({ height: `${height}px` });
 		this.ctxCommitted?.setTransform(dpr, 0, 0, dpr, 0, 0);
 		this.ctxLive?.setTransform(dpr, 0, 0, dpr, 0, 0);
 		this.ctxLayer?.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -492,7 +492,7 @@ export class PageOverlay {
 		ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 		ctx.globalAlpha = 1;
 		ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
-		this.live.style.opacity = "";
+		this.live.setCssStyles({ opacity: "" });
 
 		const frame = options.frame;
 		if (!frame) return;
@@ -636,7 +636,7 @@ export class PageOverlay {
 		} finally {
 			done?.();
 		}
-		this.live.style.opacity = "";
+		this.live.setCssStyles({ opacity: "" });
 		this.clearLive();
 		this.liveStrokeId = null;
 		this.liveDrawn = 0;
@@ -719,7 +719,7 @@ export class PageOverlay {
 		if (!ctx) return;
 		ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 		ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
-		this.live.style.opacity = "";
+		this.live.setCssStyles({ opacity: "" });
 		this.liveDirty = null;
 	}
 

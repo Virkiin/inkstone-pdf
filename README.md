@@ -58,6 +58,13 @@ Settings → Community plugins → Browse → search **Inkstone PDF** → Instal
 
 Every shortcut above is rebindable in **Settings → Inkstone PDF → Key map**.
 
+## Privacy & permissions
+
+- **No network requests.** The plugin never phones home and has no telemetry.
+- **Vault access** goes through the Obsidian API: it reads the PDF you opened and reads/writes its
+  annotation file (`附件/Ink 标注/<path>.json`).
+- **System clipboard: write-only, once.** The `Show performance summary` command copies the summary
+  text to the clipboard so you can paste it into a bug report. The plugin never reads the clipboard.
 ## Data
 
 - Annotations: `<vault>/附件/Ink 标注/<path of the PDF>.json` (folder configurable).
@@ -139,6 +146,11 @@ PDF 阅读器只能高亮，手写要去 iPad，写完还得导出、截图、�
 
 以上键位都能在 **设置 → Inkstone PDF → 键位映射** 里改。
 
+### 隐私与权限
+
+- **不联网**：没有任何网络请求，也没有遥测。
+- **库内读写**：通过 Obsidian API 读取你打开的 PDF，读写它的批注文件（`附件/Ink 标注/<路径>.json`）。
+- **系统剪贴板：只写不读**，且只在一个地方写——「显示性能摘要」命令会把摘要文本复制到剪贴板，方便你贴进反馈里。插件从不读取剪贴板内容。
 ### 数据
 
 - 批注：`<库>/附件/Ink 标注/<PDF 路径>.json`（文件夹可改）。

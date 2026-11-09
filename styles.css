@@ -1036,3 +1036,22 @@ input.pdf-ink-key.pdf-ink-key-conflict {
 	min-width: 150px;
 	text-align: center;
 }
+/* ==========================================================================
+   Blur shield (settings → 关闭其他插件的毛玻璃背景)
+
+   A blurred overlay above the PDF makes Chromium re-rasterize the backdrop on
+   every pen sample. The class is toggled once at load — never per stroke — so
+   this stays a pure CSS rule instead of a runtime <style> element.
+   ========================================================================== */
+
+body.inkstone-pdf-blur-shield :is(#editingToolbarModalBar, #editingToolbarPopoverBar) {
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
+	transition: none !important;
+}
+
+body.inkstone-pdf-blur-shield :is(#editingToolbarModalBar, #editingToolbarPopoverBar) *::before,
+body.inkstone-pdf-blur-shield :is(#editingToolbarModalBar, #editingToolbarPopoverBar) *::after {
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
+}

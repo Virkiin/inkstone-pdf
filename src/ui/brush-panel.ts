@@ -350,7 +350,7 @@ export class BrushPanel {
 			swatch.classList.add("is-eraser");
 			setIcon(swatch, "eraser");
 		} else {
-			swatch.style.backgroundColor = (preset as BrushPreset).color;
+			swatch.setCssStyles({ backgroundColor: (preset as BrushPreset).color });
 		}
 		const name = this.doc.createElement("span");
 		name.className = "pdf-ink-preset-name";
@@ -446,16 +446,16 @@ export class BrushPanel {
 		}
 		this.doc.body.appendChild(menu);
 		const rect = anchor.getBoundingClientRect();
-		menu.style.left = `${Math.round(rect.left)}px`;
-		menu.style.top = `${Math.round(rect.bottom + 4)}px`;
-		menu.style.position = "fixed";
+		menu.setCssStyles({ left: `${Math.round(rect.left)}px` });
+		menu.setCssStyles({ top: `${Math.round(rect.bottom + 4)}px` });
+		menu.setCssStyles({ position: "fixed" });
 		this.menu = menu;
 		const menuRect = menu.getBoundingClientRect();
 		if (menuRect.bottom > window.innerHeight - 8) {
-			menu.style.top = `${Math.round(rect.top - menuRect.height - 4)}px`;
+			menu.setCssStyles({ top: `${Math.round(rect.top - menuRect.height - 4)}px` });
 		}
 		if (menuRect.right > window.innerWidth - 8) {
-			menu.style.left = `${Math.round(window.innerWidth - menuRect.width - 8)}px`;
+			menu.setCssStyles({ left: `${Math.round(window.innerWidth - menuRect.width - 8)}px` });
 		}
 	}
 
@@ -511,7 +511,7 @@ export class BrushPanel {
 			const swatch = this.doc.createElement("button");
 			swatch.type = "button";
 			swatch.className = "pdf-ink-panel-swatch";
-			swatch.style.backgroundColor = color;
+			swatch.setCssStyles({ backgroundColor: color });
 			swatch.dataset.index = String(index);
 			swatch.setAttribute("aria-label", color);
 			setTooltip(swatch, `${color}（长按改色，拖出面板删除）`);
@@ -556,14 +556,14 @@ export class BrushPanel {
 				this.cancelHold();
 				swatch.classList.add("is-dragging");
 			}
-			if (dragging) swatch.style.transform = `translate(${dx}px, ${dy}px)`;
+			if (dragging) swatch.setCssStyles({ transform: `translate(${dx}px, ${dy}px)` });
 		};
 		const onUp = (event: PointerEvent): void => {
 			if (event.pointerId !== pointerId) return;
 			clean();
 			this.cancelHold();
 			swatch.classList.remove("is-dragging");
-			swatch.style.transform = "";
+			swatch.setCssStyles({ transform: "" });
 			const panel = this.el;
 			if (dragging && panel) {
 				const rect = panel.getBoundingClientRect();
@@ -632,7 +632,7 @@ export class BrushPanel {
 
 		const preview = this.doc.createElement("div");
 		preview.className = "pdf-ink-color-editor-preview";
-		preview.style.backgroundColor = initial;
+		preview.setCssStyles({ backgroundColor: initial });
 		el.appendChild(preview);
 
 		const hexInput = this.doc.createElement("input");
@@ -642,7 +642,7 @@ export class BrushPanel {
 		hexInput.spellcheck = false;
 
 		const applyHex = (hex: string, updateInput: boolean): void => {
-			preview.style.backgroundColor = hex;
+			preview.setCssStyles({ backgroundColor: hex });
 			if (updateInput) hexInput.value = hex;
 			this.plugin.setPaletteSlot(index, hex);
 			this.refresh();
@@ -675,10 +675,11 @@ export class BrushPanel {
 			// background-image only: the stylesheet keeps `background-size: 100% 6px`
 			// so the colour band stays a thin stripe centred under the thumb. The
 			// `background` shorthand would reset that size and fatten the band.
-			hueSlider.style.backgroundImage =
-				"linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)";
-			satSlider.style.backgroundImage = `linear-gradient(to right, hsl(${hue} 0% ${light}%), hsl(${hue} 100% ${light}%))`;
-			lightSlider.style.backgroundImage = `linear-gradient(to right, #000, hsl(${hue} ${sat}% 50%), #fff)`;
+			hueSlider.setCssStyles({
+				backgroundImage: "linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)",
+			});
+			satSlider.setCssStyles({ backgroundImage: `linear-gradient(to right, hsl(${hue} 0% ${light}%), hsl(${hue} 100% ${light}%))` });
+			lightSlider.setCssStyles({ backgroundImage: `linear-gradient(to right, #000, hsl(${hue} ${sat}% 50%), #fff)` });
 		};
 
 		const hueSlider = row("色相", 360, hue, (next) => {
@@ -808,8 +809,8 @@ export class BrushPanel {
 		const dpr = clamp(window.devicePixelRatio || 1, 1, 2);
 		canvas.width = Math.round(PREVIEW_WIDTH * dpr);
 		canvas.height = Math.round(PREVIEW_HEIGHT * dpr);
-		canvas.style.width = `${PREVIEW_WIDTH}px`;
-		canvas.style.height = `${PREVIEW_HEIGHT}px`;
+		canvas.setCssStyles({ width: `${PREVIEW_WIDTH}px` });
+		canvas.setCssStyles({ height: `${PREVIEW_HEIGHT}px` });
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.clearRect(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
 

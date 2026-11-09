@@ -78,8 +78,8 @@ export class PdfInkLayersPopover {
 		const rect = panel.getBoundingClientRect();
 		const view = doc.defaultView ?? window;
 		if (!anchor || !anchor.isConnected) {
-			panel.style.left = `${Math.max(8, (view.innerWidth - rect.width) / 2)}px`;
-			panel.style.top = `${Math.max(8, (view.innerHeight - rect.height) / 3)}px`;
+			panel.setCssStyles({ left: `${Math.max(8, (view.innerWidth - rect.width) / 2)}px` });
+			panel.setCssStyles({ top: `${Math.max(8, (view.innerHeight - rect.height) / 3)}px` });
 			return;
 		}
 		const anchorRect = anchor.getBoundingClientRect();
@@ -110,8 +110,8 @@ export class PdfInkLayersPopover {
 				best = { left, top };
 			}
 		}
-		panel.style.left = `${best.left}px`;
-		panel.style.top = `${best.top}px`;
+		panel.setCssStyles({ left: `${best.left}px` });
+		panel.setCssStyles({ top: `${best.top}px` });
 	}
 }
 
