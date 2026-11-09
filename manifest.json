@@ -1,7 +1,7 @@
 {
 	"id": "inkstone-pdf",
 	"name": "Inkstone PDF",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"minAppVersion": "1.8.0",
 	"description": "Handwrite and annotate PDF pages with pressure, layers and a boolean eraser. Your PDF is never modified.",
 	"author": "Virkiin",

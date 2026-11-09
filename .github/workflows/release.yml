@@ -34,10 +34,11 @@ jobs:
         run: |
           node -e "const m=require('./manifest.json');const t=process.env.GITHUB_REF_NAME;if(m.version!==t){console.error('manifest.json version '+m.version+' does not match tag '+t);process.exit(1)}"
 
-      # Same flags as the local build on purpose: no minification, so reviewers
-      # and users can read the shipped bundle.
+      # Build with the repository's own script. The reviewers rebuild from
+      # source and compare bytes, so the release asset must be exactly what
+      # `npm run build` produces (banner + minify from esbuild.config.mjs).
       - name: Build
-        run: npx esbuild src/main.ts --bundle --format=cjs --platform=browser --target=es2020 --external:obsidian --outfile=main.js
+        run: npm run build
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
