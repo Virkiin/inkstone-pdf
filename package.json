@@ -1,0 +1,26 @@
+{
+  "name": "obsidian-pdf-ink",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Handwrite on PDFs in Obsidian with layers",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:integration": "node --import tsx --test tests/integration.test.ts"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^22.10.2",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.25.0",
+    "jsdom": "^26.1.0",
+    "obsidian": "1.12.3",
+    "tslib": "^2.8.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "clipper2-ts": "^2.0.1-18"
+  }
+}

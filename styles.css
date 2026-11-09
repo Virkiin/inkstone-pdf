@@ -1,0 +1,1038 @@
+/* ==========================================================================
+   PDF Ink
+   ========================================================================== */
+
+.pdf-ink-host {
+	position: relative;
+}
+
+/* Pen mode: stop Chromium from turning a pen drag into a scroll gesture,
+   which otherwise fires pointercancel ~100ms after pen-down. */
+.pdf-ink-pen-mode .pdf-container,
+.pdf-ink-pen-mode .pdf-container * {
+	touch-action: none !important;
+}
+
+.pdf-ink-canvas {
+	position: absolute;
+	top: 0;
+	left: 0;
+	pointer-events: none;
+	touch-action: none;
+}
+
+.pdf-ink-canvas-committed {
+	z-index: 3;
+}
+
+
+
+.pdf-ink-canvas-live {
+	z-index: 4;
+}
+
+.pdf-ink-eraser-cursor {
+	position: absolute;
+	left: 0;
+	top: 0;
+	z-index: 70;
+	display: none;
+	pointer-events: none;
+	border-radius: 50%;
+	/* 半透明白色实心圆：能看清擦除范围，又不会盖住底下的文字 */
+	background: rgba(255, 255, 255, 0.55);
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.18),
+		0 0 6px rgba(0, 0, 0, 0.12);
+}
+
+/* Brush outline for thick pens / highlighters (see updateHoverCursor). */
+.pdf-ink-brush-ring {
+	position: absolute;
+	left: 0;
+	top: 0;
+	z-index: 70;
+	display: none;
+	pointer-events: none;
+	border-radius: 50%;
+	border: 1px solid rgba(0, 0, 0, 0.55);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+.pdf-ink-brush-ring::after {
+	content: "";
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 3px;
+	height: 3px;
+	margin: -1.5px 0 0 -1.5px;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.75);
+	box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75);
+}
+
+/* Thin brush: a quiet dot with four short arms, no page-wide crosshair.
+   A PNG (32x32, hotspot in the middle) instead of an SVG data URI: Chromium
+   silently drops SVG cursors on some builds, which is why nothing showed. */
+/* Hand tool: grab the page to pan the view. */
+.pdf-ink-host.pdf-ink-tool-hand .pdf-container .page,
+.pdf-ink-host.pdf-ink-tool-hand .pdf-container .page * {
+	cursor: grab;
+}
+
+.pdf-ink-host.pdf-ink-panning .pdf-container .page,
+.pdf-ink-host.pdf-ink-panning .pdf-container .page * {
+	cursor: grabbing;
+}
+
+.pdf-ink-host.pdf-ink-cursor-point:not(.pdf-ink-alt) .pdf-container .page,
+.pdf-ink-host.pdf-ink-cursor-point:not(.pdf-ink-alt) .pdf-container .page * {
+	cursor:
+		url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAmElEQVR42u2VUQ6AIAxDmfECJXr/A2K4Qv0yMQhKRhBN1i/Cx/pY1uGcyfRXkQwACIAkA8mgqTONfogBGIC0pOBSTGR9pQOlyGmiKC3m3vvlOMcYN00nRPuSs3kOomiYwGUBADB3fxjkzGshUoC513TfQT4C1LSyawyHz8DwFGj3gGYZqRZRyeS1TZjOQu3E229oAJ8EMJl2xuxL2vtj7qEAAAAASUVORK5CYII=") 16 16,
+		crosshair;
+}
+
+/* Thick brush: the drawn ring replaces the pointer. */
+.pdf-ink-host.pdf-ink-cursor-ring:not(.pdf-ink-alt) .pdf-container .page,
+.pdf-ink-host.pdf-ink-cursor-ring:not(.pdf-ink-alt) .pdf-container .page * {
+	cursor: none;
+}
+.pdf-ink-drawing .pdf-ink-canvas-live {
+	pointer-events: auto;
+	cursor: crosshair;
+}
+
+/* The PDF text layer sits above the page and shows an I-beam. While the pen
+   owns the page it must not change the cursor or swallow the stroke. */
+.pdf-ink-host .pdf-ink-canvas {
+	z-index: 3;
+	cursor: crosshair;
+}
+
+/* The PDF text layer sits above the page and shows an I-beam. While the pen
+   owns the page it must not change the cursor or swallow the stroke — and it
+   must not hand our pointer events to text-layer plugins (PDF++, selectors):
+   they do per-move work that shows up as 90 ms long tasks between pen samples.
+   Alt restores it (see .pdf-ink-alt below). */
+.pdf-ink-host.pdf-ink-pen-mode .pdf-container .textLayer {
+	cursor: crosshair;
+	pointer-events: none;
+}
+
+/* NOTE: the in-stroke variants are applied inline by the controller instead of
+   through a `.pdf-ink-stroking` descendant selector. That selector had to be
+   re-matched against every text layer of the whole document (749 pages) twice
+   per stroke, which alone cost ~40–80 ms per stroke on this vault. */
+.pdf-ink-drawing .pdf-container .textLayer {
+	pointer-events: none;
+	cursor: crosshair;
+}
+
+.pdf-ink-alt .pdf-container .textLayer {
+	pointer-events: auto !important;
+	cursor: text;
+}
+
+/* The live canvas is made hit-testable inline while drawing / stroking (see
+   controller.syncPointerTargets) — a global `.pdf-ink-stroking` rule had to be
+   re-matched against the whole document on every stroke. */
+
+/* Holding Alt temporarily gives the page back to text selection / links. */
+.pdf-ink-alt .pdf-ink-canvas-live {
+	pointer-events: none !important;
+}
+
+/* --- floating toolbar ---------------------------------------------------- */
+
+.pdf-ink-toolbar {
+	position: absolute;
+	right: 20px;
+	bottom: 56px;
+	z-index: 60;
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 2px;
+	padding: 5px 7px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.2));
+	user-select: none;
+	max-width: calc(100% - 40px);
+	cursor: grab;
+	touch-action: none;
+}
+
+.pdf-ink-toolbar:active {
+	cursor: grabbing;
+}
+
+.pdf-ink-toolbar .pdf-ink-btn,
+.pdf-ink-toolbar input,
+.pdf-ink-toolbar .pdf-ink-layer-chip {
+	cursor: pointer;
+}
+
+.pdf-ink-toolbar.is-collapsed {
+	padding: 6px;
+	width: auto !important;
+}
+
+.pdf-ink-toolbar.is-collapsed > *:not(.pdf-ink-toggle-btn) {
+	display: none !important;
+}
+
+.pdf-ink-toolbar.pdf-ink-layout-vertical {
+	flex-direction: column;
+	align-items: center;
+	width: max-content;
+}
+
+.pdf-ink-toolbar.pdf-ink-layout-vertical .pdf-ink-divider {
+	width: 18px;
+	height: 1px;
+	margin: 3px 0;
+}
+
+
+.pdf-ink-toolbar.pdf-ink-layout-vertical .pdf-ink-layer-chip {
+	width: 1.7em;
+	max-width: 1.7em;
+	max-height: none;
+	margin: 4px 0;
+	padding: 6px 0;
+	letter-spacing: 0;
+	white-space: normal;
+	overflow: visible;
+	text-overflow: clip;
+	word-break: break-all;
+	line-height: 1.15;
+	text-align: center;
+	writing-mode: horizontal-tb;
+}
+
+
+.pdf-ink-toolbar.pdf-ink-layout-square {
+	width: 200px;
+}
+
+.pdf-ink-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	border-radius: 6px;
+	color: var(--text-muted);
+	cursor: pointer;
+	box-shadow: none;
+}
+
+.pdf-ink-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.pdf-ink-btn:disabled {
+	opacity: 0.35;
+	cursor: default;
+	background: transparent;
+}
+
+.pdf-ink-btn.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.pdf-ink-btn.is-disabled {
+	opacity: 0.35;
+}
+
+.pdf-ink-btn.is-dim {
+	opacity: 0.45;
+}
+
+.pdf-ink-btn svg {
+	width: 16px;
+	height: 16px;
+}
+
+/* Current-colour swatch: a read-out, deliberately not clickable. */
+.pdf-ink-color-chip {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	cursor: default;
+	pointer-events: none;
+}
+
+.pdf-ink-color-chip.is-dim {
+	opacity: 0.35;
+}
+
+.pdf-ink-color-dot {
+	width: 15px;
+	height: 15px;
+	border-radius: 50%;
+	border: 1px solid var(--background-modifier-border);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.pdf-ink-divider {
+	width: 1px;
+	height: 18px;
+	margin: 0 3px;
+	background: var(--background-modifier-border);
+}
+
+
+.pdf-ink-layer-chip {
+	margin-left: 4px;
+	padding: 3px 8px;
+	max-width: 150px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 11px;
+	color: var(--text-muted);
+	background: var(--background-secondary);
+	border: 1px solid transparent;
+	border-radius: 999px;
+	cursor: pointer;
+	box-shadow: none;
+}
+
+.pdf-ink-layer-chip:hover {
+	color: var(--text-normal);
+	border-color: var(--background-modifier-border);
+}
+
+.pdf-ink-layer-chip.is-warning {
+	color: var(--text-warning, #c98a00);
+}
+
+
+/* --- layers sidebar ------------------------------------------------------ */
+
+.pdf-ink-layers {
+	padding: 8px 12px 24px;
+}
+
+.pdf-ink-layers-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+
+.pdf-ink-layers-title-wrap {
+	min-width: 0;
+}
+
+.pdf-ink-layers-title {
+	font-size: 14px;
+	font-weight: 600;
+	word-break: break-all;
+}
+
+.pdf-ink-layers-subtitle {
+	margin-top: 2px;
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.pdf-ink-layers-empty {
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--text-muted);
+	padding: 8px 0;
+}
+
+.pdf-ink-layer-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.pdf-ink-layer-row {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 3px 4px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	cursor: default;
+}
+
+.pdf-ink-layer-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.pdf-ink-layer-row.is-active {
+	background: var(--background-secondary);
+	border-color: var(--interactive-accent);
+}
+
+.pdf-ink-layer-row.is-hidden .pdf-ink-layer-name {
+	opacity: 0.45;
+}
+
+.pdf-ink-layer-name {
+	flex: 1;
+	min-width: 0;
+	padding: 2px 4px;
+	font-size: 13px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pdf-ink-layer-count {
+	margin-left: 6px;
+	font-size: 10px;
+	color: var(--text-faint);
+}
+
+.pdf-ink-layer-actions {
+	display: flex;
+	opacity: 0;
+}
+
+.pdf-ink-layer-row:hover .pdf-ink-layer-actions,
+.pdf-ink-layer-row.is-active .pdf-ink-layer-actions {
+	opacity: 1;
+}
+
+.pdf-ink-icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	border-radius: 4px;
+	color: var(--text-muted);
+	cursor: pointer;
+	box-shadow: none;
+}
+
+.pdf-ink-icon-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.pdf-ink-icon-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.pdf-ink-layer-rename {
+	width: 100%;
+	font-size: 13px;
+	padding: 2px 4px;
+}
+
+.pdf-ink-layers-opacity {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 10px;
+	padding: 8px 4px;
+	border-top: 1px solid var(--background-modifier-border);
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.pdf-ink-layers-opacity-input {
+	flex: 1;
+}
+
+.pdf-ink-layers-hint {
+	margin-top: 12px;
+	font-size: 11px;
+	line-height: 1.5;
+	color: var(--text-faint);
+}
+
+/* --- mode menu (eraser / selection) -------------------------------------- */
+
+.pdf-ink-mode-menu {
+	position: absolute;
+	z-index: 90;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 6px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.25));
+	min-width: 132px;
+}
+
+/* Floating variant: lives on <body> so it can never be clipped. */
+.pdf-ink-mode-menu.is-floating {
+	position: fixed;
+	z-index: 9999;
+	min-width: 168px;
+}
+
+.pdf-ink-mode-heading {
+	padding: 2px 6px 4px;
+	font-size: 11px;
+	color: var(--text-faint);
+	letter-spacing: 0.04em;
+}
+
+.pdf-ink-mode-heading:not(:first-child) {
+	margin-top: 6px;
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 8px;
+}
+
+.pdf-ink-mode-option {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 8px;
+	border: none;
+	background: transparent;
+	border-radius: 6px;
+	color: var(--text-normal);
+	font-size: 12px;
+	text-align: left;
+	cursor: pointer;
+	box-shadow: none;
+}
+
+.pdf-ink-mode-option:hover {
+	background: var(--background-modifier-hover);
+}
+
+.pdf-ink-mode-option.is-selected {
+	color: var(--text-accent);
+}
+
+.pdf-ink-radio {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 13px;
+	height: 13px;
+	flex: 0 0 auto;
+	border: 1.5px solid currentColor;
+	border-radius: 50%;
+}
+
+.pdf-ink-radio.is-selected::after {
+	content: "";
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+/* Floating layers panel opened from the toolbar. */
+.pdf-ink-layers-popover {
+	position: fixed;
+	z-index: 9998;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	width: 288px;
+	max-height: min(64vh, 560px);
+	overflow: auto;
+	padding: 10px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	box-shadow: var(--shadow-l, 0 8px 28px rgba(0, 0, 0, 0.28));
+}
+
+/* Pen menu: tap or long-press a stroke. */
+.pdf-ink-selection-menu {
+	position: fixed;
+	z-index: 9999;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 150px;
+	padding: 6px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	box-shadow: var(--shadow-l, 0 8px 24px rgba(0, 0, 0, 0.28));
+}
+
+.pdf-ink-selection-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-normal);
+	cursor: pointer;
+	text-align: left;
+}
+
+.pdf-ink-selection-item:hover {
+	background: var(--background-modifier-hover);
+}
+
+.pdf-ink-selection-icon {
+	display: inline-flex;
+	width: 16px;
+	height: 16px;
+	color: var(--text-muted);
+}
+
+.pdf-ink-selection-item[disabled] {
+	opacity: 0.45;
+	cursor: default;
+	}
+
+/* --- quick colors on the toolbar ----------------------------------------- */
+
+.pdf-ink-quick-colors {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 0 2px;
+}
+
+.pdf-ink-quick-colors.is-hidden {
+	display: none;
+}
+
+.pdf-ink-quick-color {
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	border-radius: 50%;
+	border: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	box-shadow: none;
+}
+
+.pdf-ink-quick-color:hover {
+	transform: scale(1.12);
+}
+
+.pdf-ink-quick-color.is-active {
+	box-shadow:
+		0 0 0 1px var(--background-primary),
+		0 0 0 3px var(--interactive-accent);
+}
+
+/* --- brush panel (double click / long press a brush button) -------------- */
+
+.pdf-ink-brush-panel {
+	position: fixed;
+	z-index: 9999;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	width: 236px;
+	padding: 10px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	box-shadow: var(--shadow-l, 0 8px 28px rgba(0, 0, 0, 0.28));
+	font-size: 12px;
+}
+
+.pdf-ink-panel-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.pdf-ink-panel-heading {
+	margin-top: 6px;
+	font-size: 11px;
+	color: var(--text-faint);
+	letter-spacing: 0.03em;
+}
+
+.pdf-ink-panel-presets {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.pdf-ink-preset {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	max-width: 100px;
+	padding: 3px 7px 3px 4px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 999px;
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	cursor: pointer;
+	box-shadow: none;
+}
+
+.pdf-ink-preset.is-active {
+	border-color: var(--interactive-accent);
+	color: var(--text-accent);
+}
+
+.pdf-ink-preset-swatch {
+	flex: 0 0 auto;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	border: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.pdf-ink-preset-swatch.is-eraser {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+.pdf-ink-preset-swatch.is-eraser svg {
+	width: 10px;
+	height: 10px;
+}
+
+.pdf-ink-preset-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 11px;
+}
+
+.pdf-ink-preset-add {
+	flex: 0 0 auto;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: 50%;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	box-shadow: none;
+}
+
+.pdf-ink-preset-add:hover {
+	color: var(--text-normal);
+	border-color: var(--text-muted);
+}
+
+.pdf-ink-preset-rename {
+	width: 72px;
+	font-size: 11px;
+	padding: 0 2px;
+}
+
+.pdf-ink-preset-menu {
+	z-index: 10000;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 108px;
+	padding: 4px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	box-shadow: var(--shadow-l, 0 8px 24px rgba(0, 0, 0, 0.28));
+}
+
+.pdf-ink-preset-menu-item {
+	padding: 5px 8px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-normal);
+	font-size: 12px;
+	text-align: left;
+	cursor: pointer;
+	box-shadow: none;
+}
+
+.pdf-ink-preset-menu-item:hover {
+	background: var(--background-modifier-hover);
+}
+
+.pdf-ink-panel-grid {
+	display: grid;
+	grid-template-columns: repeat(7, 20px);
+	gap: 5px;
+}
+
+.pdf-ink-panel-swatch {
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border-radius: 5px;
+	border: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	box-shadow: none;
+	touch-action: none;
+}
+
+.pdf-ink-panel-swatch.is-active {
+	box-shadow:
+		0 0 0 1px var(--background-primary),
+		0 0 0 2px var(--interactive-accent);
+}
+
+.pdf-ink-panel-swatch.is-dragging {
+	opacity: 0.55;
+	z-index: 1;
+	position: relative;
+}
+
+.pdf-ink-swatch-add {
+	background: transparent;
+	color: var(--text-muted);
+	font-size: 13px;
+	line-height: 1;
+	border-style: dashed;
+}
+
+.pdf-ink-panel-slider {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.pdf-ink-panel-slider input[type="range"] {
+	flex: 1;
+	height: 4px;
+	margin: 0;
+}
+
+.pdf-ink-panel-value {
+	min-width: 36px;
+	font-size: 11px;
+	color: var(--text-muted);
+	text-align: right;
+}
+
+.pdf-ink-panel-segment {
+	display: flex;
+	gap: 4px;
+}
+
+.pdf-ink-panel-seg {
+	flex: 1;
+	padding: 4px 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: 11px;
+	cursor: pointer;
+	box-shadow: none;
+}
+
+.pdf-ink-panel-seg.is-active {
+	border-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	background: var(--interactive-accent);
+}
+
+.pdf-ink-panel-preview {
+	display: block;
+	width: 100%;
+	margin-top: 4px;
+	border-radius: 6px;
+	background: var(--background-secondary);
+}
+
+/* In-panel colour editor (replaces the native dialog, which always opened in
+   the window corner and could not be positioned). */
+.pdf-ink-color-editor {
+	position: fixed;
+	z-index: 10001;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: 208px;
+	padding: 10px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	box-shadow: var(--shadow-l, 0 8px 28px rgba(0, 0, 0, 0.28));
+	font-size: 11px;
+}
+
+.pdf-ink-color-editor-preview {
+	height: 26px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+}
+
+.pdf-ink-color-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--text-muted);
+}
+
+.pdf-ink-color-row span {
+	flex: 0 0 24px;
+}
+
+/* The input box is exactly as tall as the thumb (12px) and the gradient is
+   painted as a centred 6px stripe, so the knob cannot drift off the colour
+   band no matter how Blink centres oversized thumbs. */
+.pdf-ink-color-row input[type="range"] {
+	flex: 1;
+	height: 12px;
+	margin: 0;
+	background-size: 100% 6px;
+	background-position: center;
+	background-repeat: no-repeat;
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+.pdf-ink-color-row input[type="range"]::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 12px;
+	height: 12px;
+	margin: 0;
+	border-radius: 50%;
+	background: var(--background-primary);
+	border: 2px solid var(--text-normal);
+}
+
+.pdf-ink-color-hex {
+	width: 100%;
+	font-family: var(--font-monospace);
+	font-size: 12px;
+	text-align: center;
+	text-transform: lowercase;
+}
+
+/* --- settings page helpers ----------------------------------------------- */
+
+.pdf-ink-settings-swatches {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 4px 0 8px;
+}
+
+.pdf-ink-settings-swatch {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.pdf-ink-settings-remove {
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--text-faint);
+	cursor: pointer;
+	line-height: 1;
+	box-shadow: none;
+}
+
+.pdf-ink-settings-remove:hover {
+	color: var(--text-error, #c0392b);
+	background: var(--background-modifier-hover);
+}
+
+.pdf-ink-settings-presets {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 4px 0 10px;
+}
+
+.pdf-ink-settings-chip {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 999px;
+	font-size: 12px;
+}
+
+.pdf-ink-swatch-mini {
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	border: 1px solid var(--background-modifier-border);
+}
+
+.pdf-ink-settings-empty {
+	font-size: 12px;
+	color: var(--text-faint);
+}
+
+
+/* ---- key binding recorder (settings → 键位映射) ---- */
+input.pdf-ink-key {
+	width: 110px;
+	text-align: center;
+	font-family: var(--font-monospace);
+	cursor: pointer;
+	caret-color: transparent;
+	user-select: none;
+}
+
+input.pdf-ink-key.pdf-ink-key-recording {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+input.pdf-ink-key.pdf-ink-key-conflict {
+	border-color: var(--text-error);
+	color: var(--text-error);
+}
+/* confirm dialog actions */
+.pdf-ink-confirm-row {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 14px;
+}
+
+/* Shift + hovering the pen: live brush size / opacity read-out */
+.pdf-ink-shift-hud {
+	position: fixed;
+	z-index: 10002;
+	padding: 4px 8px;
+	border-radius: 6px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
+	font-size: 12px;
+	pointer-events: none;
+	white-space: nowrap;
+}
+/* fixed positioning only works as "viewport" when the box is not inside a
+   transformed ancestor — the HUD is appended to <body> for that reason */
+.pdf-ink-shift-hud {
+	min-width: 150px;
+	text-align: center;
+}
