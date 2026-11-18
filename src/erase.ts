@@ -1,6 +1,7 @@
 import type { Stroke } from "./types";
 import { subtractEraser } from "./outline";
 import { flattenStroke, regionHitsPath, type RegionTest } from "./paths";
+import { strokeHitTest } from "./hittest";
 
 export * from "./paths";
 
@@ -179,6 +180,56 @@ function boxesOverlap(
  * Erases with an area either by cutting the ink geometry ("涂抹": boolean
  * subtraction, holes survive) or by removing whole strokes that it touches.
  */
+
+/** A stroke's outline, in page pixels, for fragments with no centre line. */
+function ringEdges(
+	rings: number[][],
+	pageW: number,
+	pageH: number,
+): Array<Array<{ x: number; y: number; p: number }>> {
+	const out: Array<Array<{ x: number; y: number; p: number }>> = [];
+	for (const ring of rings) {
+		const points: Array<{ x: number; y: number; p: number }> = [];
+		for (let i = 0; i + 1 < ring.length; i += 2) {
+			points.push({ x: ring[i] * pageW, y: ring[i + 1] * pageH, p: 0.5 });
+		}
+		if (points.length >= 3) {
+			points.push(points[0]);
+			out.push(points);
+		}
+	}
+	return out;
+}
+
+/**
+ * Region vs stroke test used by whole-stroke erasing.
+ *
+ * Partial erasing leaves fragments that keep only their outline (rings) and
+ * no centre line, so testing the centre line alone never matched them and
+ * those fragments could not be erased at all.
+ */
+function strokeMeetsRegion(
+	stroke: Stroke,
+	region: RegionTest,
+	bounds: { minX: number; minY: number; maxX: number; maxY: number },
+	pageW: number,
+	pageH: number,
+): boolean {
+	const paths = flattenStroke(stroke, pageW, pageH);
+	if (paths.some((path) => regionHitsPath(path.points, region))) return true;
+	for (const edges of ringEdges(stroke.rings ?? [], pageW, pageH)) {
+		if (regionHitsPath(edges, region)) return true;
+	}
+	// A region can also sit entirely inside filled ink without touching an
+	// outline, so sample a coarse grid over the eraser bounds.
+	for (const x of [bounds.minX, (bounds.minX + bounds.maxX) / 2, bounds.maxX]) {
+		for (const y of [bounds.minY, (bounds.minY + bounds.maxY) / 2, bounds.maxY]) {
+			if (strokeHitTest(stroke, x / pageW, y / pageH, pageW, pageH)) return true;
+		}
+	}
+	return false;
+}
+
 export function eraseInk(
 	strokes: Stroke[],
 	page: number,
@@ -198,8 +249,7 @@ export function eraseInk(
 		if (!boxesOverlap(strokeBoundsPx(stroke, pageW, pageH), bounds)) continue;
 
 		if (scope === "whole") {
-			const paths = flattenStroke(stroke, pageW, pageH);
-			if (!paths.some((path) => regionHitsPath(path.points, region))) continue;
+			if (!strokeMeetsRegion(stroke, region, bounds, pageW, pageH)) continue;
 			strokes.splice(i, 1);
 			changed++;
 			continue;

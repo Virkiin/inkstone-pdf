@@ -9,7 +9,7 @@ undo/redo, and annotations stored separately so your PDF is never modified.
 
 > ### ⚠️ Early preview
 >
-> `0.1.2` is an **early preview, not a finished product.** The code is written by **DSH** (DeepSeek
+> `0.1.3` is an **early preview, not a finished product.** The code is written by **DSH** (DeepSeek
 > Harness). I test it, use it and pass the problems back. Expect rough edges.
 >
 > If something crashes, draws wrong, or simply does not do what you expect, **email
@@ -36,6 +36,8 @@ write on, and the ink lives in your vault next to your notes.
 - **Real selection.** Free X/Y scaling, single-axis handles, rotation with 15° snapping, arrow-key
   nudging, copy / cut / paste.
 - **Document layers.** Annotate on one layer, answers on another, hide one to test yourself.
+- **Shapes you can still fix.** A recognised line or arrow keeps draggable ends, selections can be
+  mirrored, and the interface switches between Chinese and English.
 - **Screenless tablet support.** Hold a key for a temporary eraser, hold Shift and drag to resize
   the brush, rebindable keyboard shortcuts for every tool.
 - **Your PDF stays untouched.** Strokes are stored in a sidecar JSON inside your vault, so they sync
@@ -102,6 +104,8 @@ A preview build lives or dies on bug reports, so they are the most useful thing 
 
 - Desktop only; not tested on mobile.
 - Rotated rectangles/ellipses are baked into polygons (visually identical, no longer a "shape").
+- Mirroring is off while the selection contains a line, an arrow or a polygon (a flipped arrow would
+  swap its head, a polygon would reverse its vertex order).
 - Annotations of a PDF live in the vault that contains that PDF.
 - The annotation file only ever gains fields, so old data stays readable — but behaviour can still
   change between preview builds.
@@ -113,10 +117,6 @@ disappear.
 
 **In progress**
 
-- **Input smoothing.** An optional jitter filter (off / light / medium) for shaking hands. It costs
-  0.5–2 frames of latency, so the default has to be measured on a real tablet instead of guessed.
-- **Pan tool.** Hold `Shift` on the pan tool to zoom vertically, and a rebindable key that toggles
-  between pen and pan.
 - **More rebindable actions.** Eraser region/mode, brush presets 1–3, brush size ±, layer up/down,
   page next/previous. The key-map structure already exists; the actions are not wired up yet.
 - **Brush panel finish.** Reorder presets, restore defaults, and keep the panel in step when the tool
@@ -168,7 +168,7 @@ MIT — see [LICENSE](LICENSE). Bundled dependencies and their notices: [THIRD_P
 
 > ### ⚠️ 先行测试版
 >
-> **`0.1.2` 是先行测试版，不是成品。** 代码由 **DSH**（DeepSeek Harness）开发，测试、实测和问题反馈由我来做，小毛病在所难免。
+> **`0.1.3` 是先行测试版，不是成品。** 代码由 **DSH**（DeepSeek Harness）开发，测试、实测和问题反馈由我来做，小毛病在所难免。
 >
 > 崩溃、笔迹画错、操作不符合预期——**发邮件到 `1315675831@qq.com`**，写清"做了什么 / 出现了什么现象"就行，不需要任何模板，有截图更好。
 >
@@ -188,6 +188,7 @@ PDF 阅读器只能高亮，手写要去 iPad，写完还得导出、截图、�
 - **布尔裁剪橡皮**：擦过的地方是真的被挖掉，移动笔迹也不会重新冒出来；
 - **有向选区**：四角自由缩放、边中点单轴缩放、圆点旋转（15° 吸附）、方向键微移、复制/剪切/粘贴；
 - **文档级图层**：批注写一层、答案写一层，隐藏一层就能自己考自己；
+- **画完还能改**：直线、箭头两端可拖，选中可镜像，界面中英双语；
 - **数位板适配**：按住键临时橡皮、Shift 贴页面拖动改粗细、所有工具键位可重绑；
 - **原 PDF 不动**：笔迹存在库内的侧车 JSON，跟随库同步，可撤销。
 
@@ -239,6 +240,7 @@ PDF 阅读器只能高亮，手写要去 iPad，写完还得导出、截图、�
 
 - 仅桌面端，未在移动端测试。
 - 旋转过的矩形/椭圆会被烘焙成多边形（外观一致，但不再是"形状"）。
+- 选区里只要有直线、箭头或多边形，镜像按钮就不可用（箭头翻面等于换头，多边形会反顶点顺序）。
 - 同一个 PDF 的批注只存在于该 PDF 所在的那个库里。
 - 批注文件只会增量加字段，旧数据始终可读——但测试版之间的行为仍可能变化。
 
@@ -248,8 +250,6 @@ PDF 阅读器只能高亮，手写要去 iPad，写完还得导出、截图、�
 
 **正在做**
 
-- **输入抖动修正**：可选的抖动滤波（关 / 轻 / 中），照顾手不稳的情况；代价是 0.5–2 帧延迟，所以默认档要实测后再定，不拍脑袋。
-- **拖拽工具收尾**：拖拽工具下按住 `Shift` 纵向缩放页面，外加一个可重绑的「笔 / 拖拽」切换键。
 - **更多可重绑动作**：橡皮区域/方式、笔刷预设 1–3、笔宽 ±、图层上/下、翻页。键位表结构已就绪，动作还没接上。
 - **笔刷面板收尾**：预设排序、恢复默认预设、切工具时面板跟着换。
 

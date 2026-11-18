@@ -19,6 +19,12 @@ export interface PdfInkActionDef {
 	/** binding applied when the user never touched this action */
 	defaultSpec: string;
 	tool?: ToolName;
+	/**
+	 * Action that flips between two tools instead of selecting one: from any
+	 * other tool it goes to the first entry, from either of the two it goes to
+	 * the other one.
+	 */
+	toggle?: [ToolName, ToolName];
 	/** palette index (0-based) for colour actions */
 	colorIndex?: number;
 }
@@ -33,6 +39,15 @@ export const ACTIONS: PdfInkActionDef[] = [
 	{ id: "tool:rect", name: "矩形", group: "工具", defaultSpec: "r", tool: "rect" },
 	{ id: "tool:ellipse", name: "椭圆", group: "工具", defaultSpec: "o", tool: "ellipse" },
 	{ id: "tool:hand", name: "拖拽页面", group: "工具", defaultSpec: "g", tool: "hand" },
+	{
+		id: "tool:pen-hand",
+		name: "笔 / 拖拽切换",
+		group: "工具",
+		// `q` is free (tools use P H E S L A R O G, colours 1–9) and sits where
+		// the left hand already rests.
+		defaultSpec: "q",
+		toggle: ["pen", "hand"],
+	},
 	{ id: "color:1", name: "调色板第 1 色", group: "颜色", defaultSpec: "1", colorIndex: 0 },
 	{ id: "color:2", name: "调色板第 2 色", group: "颜色", defaultSpec: "2", colorIndex: 1 },
 	{ id: "color:3", name: "调色板第 3 色", group: "颜色", defaultSpec: "3", colorIndex: 2 },
@@ -44,8 +59,18 @@ export const ACTIONS: PdfInkActionDef[] = [
 	{ id: "color:9", name: "调色板第 9 色", group: "颜色", defaultSpec: "9", colorIndex: 8 },
 ];
 
-export type KeyMod = "ctrl" | "alt" | "shift";
+/**
+ * Result of a "toggle between two tools" key: any other tool goes to the first
+ * entry, and the two entries flip between each other.
+ */
+export function toggleToolTarget(current: ToolName, pair: [ToolName, ToolName]): ToolName {
+	const [first, second] = pair;
+	if (current === first) return second;
+	if (current === second) return first;
+	return first;
+}
 
+export type KeyMod = "ctrl" | "alt" | "shift";
 export interface ParsedKeySpec {
 	mods: KeyMod[];
 	key: string;

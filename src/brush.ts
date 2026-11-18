@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { EraserRegion, EraserScope } from "./types";
 
 /**
@@ -90,7 +91,7 @@ export function colorName(hex: string): string {
 			best = label;
 		}
 	}
-	return best;
+	return t(best);
 }
 
 /** "2.5" / "12" — one decimal at most, no trailing zero. */
@@ -109,7 +110,7 @@ export function eraserPresetName(
 	region: EraserRegion,
 	widthPx: number,
 ): string {
-	return `${REGION_LABELS[region]} · ${formatWidth(widthPx)}`;
+	return `${t(REGION_LABELS[region])} · ${formatWidth(widthPx)}`;
 }
 
 /** Copies a preset list so defaults can never be mutated by accident. */

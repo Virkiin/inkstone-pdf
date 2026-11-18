@@ -27,6 +27,48 @@ const close = (a: number, b: number, tolerance = 1e-9): void => {
 	assert.ok(Math.abs(a - b) <= tolerance, `${a} should be close to ${b}`);
 };
 
+test("a negative scale mirrors the ink about the pivot", () => {
+	const stroke = penStroke([0.2, 0.3, 0.5, 0.4, 0.3, 0.5]);
+	const snapshot = snapshotStroke(stroke);
+	applyTransform(stroke, snapshot, {
+		scaleX: -1,
+		scaleY: 1,
+		rotate: 0,
+		local: true,
+		cx: 0.3 * W,
+		cy: 0.35 * H,
+		pageWidth: W,
+		pageHeight: H,
+	});
+	close(stroke.points[0], 0.4);
+	close(stroke.points[1], 0.3);
+	close(stroke.points[3], 0.2);
+	close(stroke.points[4], 0.3);
+	// A mirror is area preserving: the pen keeps its width.
+	close(stroke.width, 2 / W);
+});
+
+test("mirroring an axis-aligned rect keeps it a rect", () => {
+	const rect: Stroke = {
+		...penStroke([0.2, 0.2, 0.5, 0.4, 0.5, 0.4]),
+		kind: "rect",
+	};
+	const snapshot = snapshotStroke(rect);
+	applyTransform(rect, snapshot, {
+		scaleX: -1,
+		scaleY: 1,
+		rotate: 0,
+		local: true,
+		cx: 0.35 * W,
+		cy: 0.3 * H,
+		pageWidth: W,
+		pageHeight: H,
+	});
+	assert.equal(rect.kind, "rect");
+	close(rect.points[0], 0.5);
+	close(rect.points[3], 0.3);
+});
+
 test("scale keeps the pivot pinned and doubles the geometry", () => {
 	const stroke = penStroke([0.2, 0.2, 0.5, 0.4, 0.3, 0.5]);
 	const snapshot = snapshotStroke(stroke);

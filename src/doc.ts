@@ -1,5 +1,6 @@
 import type { InkDoc, Layer, ShapeKind, Stroke, StrokeKind } from "./types";
 import { clamp, isFiniteNumber, uid } from "./util";
+import { t } from "./i18n";
 
 export const DOC_VERSION = 1;
 
@@ -41,7 +42,7 @@ export function createLayer(name: string): Layer {
 }
 
 export function createDoc(filePath: string): InkDoc {
-	const layer = createLayer("图层 1");
+	const layer = createLayer(t("图层 1"));
 	return {
 		version: DOC_VERSION,
 		file: filePath,
@@ -162,7 +163,7 @@ export function normalizeDoc(raw: unknown, filePath: string): InkDoc {
 				name:
 					typeof layerValue.name === "string" && layerValue.name
 						? layerValue.name
-						: `图层 ${layers.length + 1}`,
+						: t("图层 {count}", { count: layers.length + 1 }),
 				visible: layerValue.visible !== false,
 				locked: layerValue.locked === true,
 				opacity: isFiniteNumber(layerValue.opacity)

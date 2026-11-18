@@ -1,6 +1,23 @@
 # Changelog
 
-## 0.1.0（未发布，开发中）
+## 0.1.3
+
+界面中英双语、形状识别更快更准、画完还能改。
+
+- 界面中英双语：设置里在「自动 / 中文 / English」之间切换，命令名、工具栏、笔刷面板、设置项全部跟随；预设名与图层名这类用户数据不翻译
+- 形状识别更快：干净的长直线和规整的方框、圆约 160ms 落定，其余形状的默认停顿从 600ms 降到 350ms（设置里可调 150–1500ms）
+- 方框不再被认成椭圆：改用「到包围盒四边的平均距离」判定，圆角方框、手抖方框都稳定出矩形
+- 新增水平 / 垂直镜像：选中菜单一行两键，镜像轴取选区框自身；直线、箭头、多边形不可镜像（按钮置灰并说明原因）
+- 直线和箭头可以改端点：单选时两端出现圆点手柄，拖动只改这一端，另一端钉住
+- 输入抖动修正：关 / 轻 / 中三档 One-Euro 滤波，默认轻，抬笔时追加原始末点避免笔画缩短
+- 橡皮修复：涂抹切分后只剩轮廓的碎片也能整笔擦掉；擦除后的重绘范围包含被删笔迹的包围盒，不再留残影
+- Shift + 拖拽缩放改为 5 档线性变速（设置里 1–5，默认 3）
+- Shift 调笔宽 / 不透明度加了每轴 3px 死区，两个方向不再互相串
+- 新增卡死探针与擦除慢日志，方便定位偶发卡顿
+
+English: bilingual UI (Auto / Chinese / English); faster shape recognition (about 160 ms for obvious shapes, 350 ms default, adjustable); boxes are no longer classified as ellipses; horizontal and vertical mirror in the selection menu for pen, highlighter, rectangle and ellipse; draggable endpoints for lines and arrows; input smoothing (off / light / medium); eraser fixes for fragments and ghost trails; 5-step Shift+drag zoom; 3 px dead zone on the brush-adjust gesture.
+
+## 0.1.0（历史开发迭代，dev.16–dev.51）
 
 - 按 [1.0 规格](docs/spec-v1.md) 实现 PDF 手写批注
 - 文档级图层、压感、区域橡皮、形状工具、多色笔、自动保存

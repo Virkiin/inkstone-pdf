@@ -28,11 +28,14 @@ import { recognizeStroke } from "./recognize";
 import type { RecognizedShape } from "./recognize";
 import { applyTransform, restoreStroke, snapshotStroke } from "./transform";
 import type { InkTransform, StrokeSnapshot } from "./transform";
-import type { InkDoc, Layer, ShapeKind, Stroke } from "./types";
+import type { InkDoc, Layer, ShapeKind, Stroke, StrokeKind } from "./types";
 import { SelectionMenu } from "./ui/selection-menu";
 import { PdfInkToolbar } from "./ui/toolbar";
 import type { Box } from "./ui/place";
 import { REFERENCE_PAGE_WIDTH, clamp, uid } from "./util";
+import { createJitterFilter } from "./smoothing";
+import type { OneEuroFilter } from "./smoothing";
+import { t } from "./i18n";
 
 interface FreehandSession {
 	type: "freehand";
@@ -85,7 +88,7 @@ interface EraseSession {
 
 /** Corner / knob drag: one undo entry, live from the original snapshots. */
 interface TransformSession {
-	kind: "scale" | "rotate";
+	kind: "scale" | "rotate" | "endpoint";
 	overlay: PageOverlay;
 	ids: string[];
 	snapshots: Map<string, StrokeSnapshot>;
@@ -109,6 +112,8 @@ interface TransformSession {
 	scaleY: number;
 	rotate: number;
 	label: string;
+	/** which end of a single line / arrow is being dragged */
+	endpoint?: 0 | 1;
 }
 
 /** Oriented selection frame, normalized to the page box (see FramePx). */
@@ -139,6 +144,35 @@ const THIN_BRUSH_PX = 6;
 const HOLD_CANCEL_PX = 5;
 /** How often the hold gesture re-checks pen pressure inside its window. */
 const HOLD_POLL_MS = 60;
+/**
+ * Earliest auto-shape commit while the pen rests. Only very clear guesses
+ * (a regular box / circle, or a long straight line) go through this fast
+ * path; everything else waits for the configured pause, so pausing in the
+ * middle of handwriting cannot cut a stroke.
+ */
+const QUICK_SHAPE_MS = 160;
+/** Confidence a guess needs to be committed at the quick stage. */
+const QUICK_SHAPE_CONFIDENCE = 0.72;
+/** Straight guesses shorter than this wait for the full pause (letters are short). */
+const QUICK_LINE_PX = 80;
+/** Minimum configured shape pause; the setting is clamped to it on load. */
+const MIN_SHAPE_HOLD_MS = 150;
+
+/** Round endpoint handles on a selected single line / arrow. */
+const ENDPOINT_HANDLE_HIT_PX = 14;
+/** Kinds that get draggable endpoint handles while selected. */
+const ENDPOINT_KINDS: ReadonlySet<StrokeKind> = new Set<StrokeKind>(["line", "arrow"]);
+/**
+ * Kinds a mirror may rewrite. Lines, arrows and polygons are excluded on
+ * purpose: mirroring them would silently swap a head or reverse a vertex
+ * order, which reads as a bug rather than a feature.
+ */
+const MIRROR_KINDS: ReadonlySet<StrokeKind> = new Set<StrokeKind>([
+	"pen",
+	"highlighter",
+	"rect",
+	"ellipse",
+]);
 
 /**
  * Shifts a stroke (centerline or outline) by a normalized delta.
@@ -307,6 +341,46 @@ export class PdfInkController {
 		top: number;
 		scroller: HTMLElement;
 	} | null = null;
+	/** hand tool + Shift: vertical drag zooms the page around the press point */
+	private handZoom: {
+		pointerId: number;
+		startY: number;
+		/** "viewer" previews with a CSS transform and commits once on release */
+		mode: "viewer" | "wheel";
+		startScale: number;
+		/** scale the drag currently asks for (committed on release) */
+		target: number;
+		/** element carrying the preview transform */
+		previewEl: HTMLElement | null;
+		/** transform origin, in the element's own coordinates */
+		originX: number;
+		originY: number;
+		/** press point in client coordinates (the commit anchor) */
+		startClientX: number;
+		startClientY: number;
+		/** page under the pointer and the relative point inside it */
+		anchorPage: HTMLElement | null;
+		fx: number;
+		fy: number;
+		/** preview transform origins: at the pointer, and at the viewport centre */
+		centerOriginX: number;
+		centerOriginY: number;
+		/** sizes at gesture start, to predict when the host will centre instead */
+		pageWidth: number;
+		pageHeight: number;
+		viewportWidth: number;
+		viewportHeight: number;
+		/** wheel mode: how many zoom ticks were already sent */
+		ticks: number;
+		scroller: HTMLElement;
+	} | null = null;
+	/** object that owns the page scale (pdf.js viewer), and where it was found */
+	private scaleTarget: any = null;
+	private scaleTargetPath = "";
+	/** preview ratio of the last zoom drag, for the log */
+	private lastZoomRatio = 1;
+	/** per-stroke jitter filter (null when smoothing is off) */
+	private jitter: OneEuroFilter | null = null;
 	private liveRaf = 0;
 	private lastLiveAt = 0;
 	/** hold-to-erase timer and the point it was armed at */
@@ -1145,7 +1219,7 @@ export class PdfInkController {
 				`external: doc not ready file=${this.view?.file?.path ?? "-"} pages=${this.pageEls.size}`,
 			);
 			void this.ensureFile().then(() => {
-				this.notice("批注正在加载，请再写一次");
+				this.notice(t("批注正在加载，请再写一次"));
 			});
 			this.plugin.dumpDiagnostics("doc-not-ready");
 			return false;
@@ -1339,7 +1413,9 @@ export class PdfInkController {
 	private beginToolAt(overlay: PageOverlay, event: PointerEvent): void {
 		const tool = this.plugin.tool;
 		if (tool === "hand") {
-			this.beginPan(event);
+			// Shift turns the hand tool into a zoom slider: vertical drag only.
+			if (event.shiftKey) this.beginHandZoom(event);
+			else this.beginPan(event);
 			return;
 		}
 		if (tool === "select") {
@@ -1394,6 +1470,14 @@ export class PdfInkController {
 			lastPressure: point.p,
 			lastPointAt: perf.now(),
 		};
+		this.jitter = null;
+		if (tool === "pen" || tool === "highlighter") {
+			const pageW = overlay.widthPx || 1;
+			const pageH = overlay.heightPx || 1;
+			this.jitter = createJitterFilter(this.plugin.settings.jitterFilter ?? "light");
+			// Seed with the landing point so the stroke starts exactly there.
+			this.jitter?.filter(point.x * pageW, point.y * pageH, performance.now() / 1000);
+		}
 		this.plugin.log(
 			`stroke start kind=${tool} page=${overlay.pageNumber} size=${overlay.widthPx}x${overlay.heightPx}`,
 		);
@@ -1479,26 +1563,70 @@ export class PdfInkController {
 		const settings = this.plugin.settings;
 		if (!settings.autoShapeEnabled || settings.autoShapeTrigger !== "hold") return;
 		// Re-arming on every single sample hammered the timer queue while
-		// writing fast; a 120 ms throttle is still far below the hold delay.
+		// writing fast; an 80 ms throttle is still far below both delays.
 		const now = perf.now();
-		if (now - this.shapeHoldArmedAt < 120) return;
+		if (now - this.shapeHoldArmedAt < 80) return;
 		this.shapeHoldArmedAt = now;
 		if (this.shapeHoldTimer !== null) window.clearTimeout(this.shapeHoldTimer);
-		const delay = Math.max(200, settings.autoShapeHoldMs);
-		this.shapeHoldTimer = window.setTimeout(() => {
-			this.shapeHoldTimer = null;
-			if (this.session !== session) return;
-			if (perf.now() - session.lastPointAt < delay - 30) return;
-			const rect = this.rectFor(session.overlay);
-			if (rect.width < 10 || rect.height < 10) return;
-			const points = session.stroke.points;
-			// Cheap rejects first: recognition is pure CPU work on the hot path.
-			if (points.length < 12) return;
-			if (!recognizeStroke(points, rect.width, rect.height)) return;
-			perf.count("shape.early");
-			this.plugin.log("shape hold: committing early");
-			this.finishSession();
-		}, delay);
+		const delay = Math.max(MIN_SHAPE_HOLD_MS, settings.autoShapeHoldMs);
+		// Two stages: obvious shapes commit as soon as the pen has clearly
+		// stopped, everything else after the configured pause. The second
+		// stage is only reached when the quick check saw no obvious guess.
+		const run = (obviousOnly: boolean, waitMs: number): void => {
+			this.shapeHoldTimer = window.setTimeout(() => {
+				this.shapeHoldTimer = null;
+				if (this.session !== session) return;
+				const rested = perf.now() - session.lastPointAt;
+				// The pen moved again: a newer arm is already scheduled.
+				if (rested + 30 < waitMs) return;
+				const rect = this.rectFor(session.overlay);
+				if (rect.width >= 10 && rect.height >= 10) {
+					const points = session.stroke.points;
+					// Cheap reject first: recognition is pure CPU work.
+					if (points.length >= 12) {
+						const shape = recognizeStroke(points, rect.width, rect.height);
+						if (shape && (!obviousOnly || this.isObviousShape(shape, points, rect))) {
+							perf.count(obviousOnly ? "shape.quick" : "shape.early");
+							this.plugin.log(
+								`shape hold: ${obviousOnly ? "quick" : "full"} commit after ${Math.round(
+									rested,
+								)}ms kind=${shape.kind}`,
+							);
+							this.finishSession();
+							return;
+						}
+					}
+				}
+				if (!obviousOnly || delay <= QUICK_SHAPE_MS) return;
+				const left = Math.max(0, delay - (perf.now() - session.lastPointAt));
+				run(false, left);
+			}, waitMs);
+		};
+		run(delay > QUICK_SHAPE_MS, Math.min(QUICK_SHAPE_MS, delay));
+	}
+
+	/**
+	 * Whether a guess is clear enough to skip the configured pause. Boxes and
+	 * circles only need to be *regular*; a straight guess must also be long,
+	 * because a short straight stem is how most letters start.
+	 */
+	private isObviousShape(
+		shape: RecognizedShape,
+		points: number[],
+		rect: { width: number; height: number },
+	): boolean {
+		if (shape.kind === "rect" || shape.kind === "ellipse") {
+			return shape.confidence >= QUICK_SHAPE_CONFIDENCE;
+		}
+		if (shape.kind === "line" || shape.kind === "arrow") {
+			if (points.length < 6) return false;
+			const dx = (points[3] - points[0]) * rect.width;
+			const dy = (points[4] - points[1]) * rect.height;
+			return Math.hypot(dx, dy) >= QUICK_LINE_PX && shape.confidence >= 0.9;
+		}
+		// Polygons stay on the slow path: three corners are too easy to hit
+		// in ordinary handwriting.
+		return false;
 	}
 
 	private cancelShapeHold(): void {
@@ -1670,9 +1798,426 @@ export class PdfInkController {
 		window.removeEventListener("pointercancel", this.onPanEnd, true);
 	};
 
+	/* ------------------------------------------------------------------ */
+	/* Hand tool + Shift (zoom)                                            */
+	/* ------------------------------------------------------------------ */
+
+	/** The pdf.js viewer, when resolvable: it owns the page scale. */
+	private get zoomViewer(): any {
+		return this.resolveScaleTarget();
+	}
+
+	/**
+	 * Finds the object that actually owns the page scale.
+	 *
+	 * The host does not expose it at a fixed path (it differs between builds and
+	 * may be nested), so walk the view / viewer wrapper a few levels deep and
+	 * take the first object with a numeric `currentScale`. Cached, but re-probed
+	 * when the cached object stops looking like a viewer (view reloaded).
+	 */
+	/**
+	 * A viewer object is only usable if the pages it owns are the ones on screen.
+	 * pdf.js (and Obsidian) can rebuild the viewer when a file is reloaded, and a
+	 * stale viewer still reports a numeric `currentScale` while ignoring every
+	 * write — which is exactly the "zoom does nothing" symptom.
+	 */
+	private isLiveViewer(node: any): boolean {
+		if (!node) return false;
+		let container: any = node.container ?? node.viewer ?? null;
+		if (container && typeof container.closest === "function") {
+			return this.containerEl.contains(container) && container.isConnected;
+		}
+		if (container && typeof container.getBoundingClientRect === "function") {
+			return this.containerEl.contains(container);
+		}
+		// No DOM handle to check: fall back to the page view's own container.
+		const page = node._pages?.[0]?.div;
+		return Boolean(page && this.containerEl.contains(page));
+	}
+
+	private resolveScaleTarget(): any {
+		const cached = this.scaleTarget;
+		if (cached && typeof cached.currentScale === "number" && this.isLiveViewer(cached)) {
+			return cached;
+		}
+		const found = this.probeScaleTarget();
+		this.scaleTarget = found?.obj ?? null;
+		this.scaleTargetPath = found?.path ?? "";
+		return this.scaleTarget;
+	}
+
+	private probeScaleTarget(): { obj: any; path: string } | null {
+		const seen = new Set<any>();
+		const queue: Array<{ node: any; path: string; depth: number }> = [];
+		const push = (node: any, path: string, depth: number): void => {
+			if (!node || typeof node !== "object") return;
+			if (seen.has(node) || seen.size + queue.length > 600) return;
+			queue.push({ node, path, depth });
+		};
+		// The leaf's *current* view: `this.view` is captured at attach time and can
+		// be a replaced instance after a reload.
+		const view: any = (this.leaf?.view as any) ?? this.view;
+		push(view, "leaf.view", 0);
+		push(view?.viewer, "leaf.view.viewer", 0);
+		push(view?.pdfViewer, "leaf.view.pdfViewer", 0);
+		push(this.component, "component", 0);
+		push(this.pdfWrapper, "pdfWrapper", 0);
+		// Walking these would drag the whole app object graph into the search.
+		const skip = new Set([
+			"app",
+			"workspace",
+			"vault",
+			"metadataCache",
+			"fileManager",
+			"plugins",
+			"parent",
+			"children",
+			"ownerDocument",
+			"defaultView",
+			"firstChild",
+			"lastChild",
+			"nextSibling",
+			"previousSibling",
+		]);
+		let fallback: { obj: any; path: string } | null = null;
+		while (queue.length > 0) {
+			const entry = queue.shift()!;
+			if (seen.has(entry.node)) continue;
+			seen.add(entry.node);
+			if (typeof entry.node.currentScale === "number") {
+				// Only accept something that really behaves like a pdf.js viewer:
+				// the numeric scale alone is easy to hit by accident.
+				const node = entry.node as any;
+				const looksLikeViewer =
+					typeof node.currentScaleValue === "string" ||
+					typeof node.scrollPageIntoView === "function" ||
+					typeof node.currentPageNumber === "number" ||
+					Array.isArray(node._pages);
+				if (looksLikeViewer) {
+					// Prefer the viewer whose pages are on screen; a dead twin is
+					// useless but still looks right, so keep searching.
+					if (this.isLiveViewer(node)) return { obj: node, path: entry.path };
+					if (!fallback) fallback = { obj: node, path: `${entry.path}(stale)` };
+				}
+			}
+			if (entry.depth >= 5) continue;
+			let keys: string[] = [];
+			try {
+				keys = Object.getOwnPropertyNames(entry.node);
+			} catch {
+				continue;
+			}
+			for (const key of keys.slice(0, 60)) {
+				if (skip.has(key) || key.startsWith("__")) continue;
+				let value: any;
+				try {
+					value = entry.node[key];
+				} catch {
+					continue;
+				}
+				if (!value || typeof value !== "object" || value === entry.node) continue;
+				if (typeof value.nodeType === "number") continue; // DOM node
+				push(value, `${entry.path}.${key}`, entry.depth + 1);
+			}
+		}
+		return fallback;
+	}
+
+	/**
+	 * Commits one zoom step, trying every entry point the host may offer and
+	 * checking the result after each. pdf.js applies `_setScale` synchronously,
+	 * so a read-back here is reliable — unlike the per-frame pinch path, which
+	 * rounds to 1 % and is therefore only usable for a single final step.
+	 */
+	/** Viewport centre, in the preview element's own coordinates. */
+	private centerOrigin(
+		_event: PointerEvent,
+		previewEl: HTMLElement | null,
+		scroller: HTMLElement,
+		axis: "x" | "y",
+	): number {
+		if (!previewEl) return 0;
+		const preview = previewEl.getBoundingClientRect();
+		const view = scroller.getBoundingClientRect();
+		return axis === "x"
+			? view.left + view.width / 2 - preview.left
+			: view.top + view.height / 2 - preview.top;
+	}
+
+	/** The page element under the pointer, if any. */
+	private anchorPageAt(event: PointerEvent): HTMLElement | null {
+		const target = event.target as Element | null;
+		return (target?.closest?.(".page") as HTMLElement | null) ?? null;
+	}
+
+	/** Where inside that page the pointer sits, as 0–1 fractions. */
+	private anchorFraction(event: PointerEvent, axis: "x" | "y"): number {
+		const page = this.anchorPageAt(event);
+		if (!page) return 0.5;
+		const rect = page.getBoundingClientRect();
+		const size = axis === "x" ? rect.width : rect.height;
+		if (!(size > 0)) return 0.5;
+		const offset = axis === "x" ? event.clientX - rect.left : event.clientY - rect.top;
+		return Math.min(1, Math.max(0, offset / size));
+	}
+
+	private commitZoom(target: number, origin: [number, number]): string | null {
+		const viewer = this.resolveScaleTarget();
+		if (!viewer) return null;
+		const current = typeof viewer.currentScale === "number" ? viewer.currentScale : target;
+		const factor = target / current;
+		const applied = (): boolean => {
+			const now = viewer.currentScale;
+			return (
+				typeof now === "number" && Number.isFinite(now) && Math.abs(now - target) <= 0.02
+			);
+		};
+		const attempts: Array<[string, () => void]> = [
+			// Origin-aware first: it moves the view so the point under the pointer
+			// stays put, which the numeric setters below cannot do.
+			["updateScale", () => viewer.updateScale({ scaleFactor: factor, origin })],
+			["currentScale", () => (viewer.currentScale = target)],
+			["currentScaleValue", () => (viewer.currentScaleValue = String(target))],
+			["app.updateZoom", () => this.pdfWrapper.updateZoom(null, factor, origin)],
+			["app.zoomIn", () => this.pdfWrapper.zoomIn?.()],
+		];
+		for (const [name, run] of attempts) {
+			let error: unknown = null;
+			try {
+				run();
+			} catch (caught) {
+				error = caught;
+			}
+			const now = viewer.currentScale;
+			this.plugin.log(
+				`zoom try=${name} actual=${typeof now === "number" ? now.toFixed(3) : now}${
+					error ? ` threw=${String(error).slice(0, 100)}` : ""
+				}`,
+			);
+			if (applied()) {
+				this.plugin.log(`zoom commit via=${name} scale=${target.toFixed(3)}`);
+				return name;
+			}
+		}
+		this.plugin.log(`zoom commit failed target=${target.toFixed(3)} actual=${viewer.currentScale}`);
+		return null;
+	}
+
+	/** One line describing what the zoom probe can see, for `debug.json`. */
+	describeZoomCandidates(): string {
+		const view: any = this.view;
+		const roots: Array<[string, any]> = [
+			["view", view],
+			["view.viewer", view?.viewer],
+			["view.viewer.child", view?.viewer?.child],
+			["view.pdfViewer", view?.pdfViewer],
+			["component", this.component],
+			["pdfWrapper", this.pdfWrapper],
+		];
+		const parts: string[] = [];
+		for (const [path, node] of roots) {
+			if (!node || typeof node !== "object") {
+				parts.push(`${path}=none`);
+				continue;
+			}
+			let name = "?";
+			try {
+				name = node.constructor?.name ?? "?";
+			} catch {
+				/* exotic object */
+			}
+			let proto: string[] = [];
+			try {
+				proto = Object.getOwnPropertyNames(Object.getPrototypeOf(node) ?? {});
+			} catch {
+				/* no prototype */
+			}
+			const interesting = proto
+				.filter((key) => /scale|zoom|page|viewer/i.test(key))
+				.slice(0, 8)
+				.join("|");
+			parts.push(
+				`${path}=${name}[scale:${typeof node.currentScale},value:${typeof node.currentScaleValue},page:${typeof node.currentPageNumber}](${interesting})`,
+			);
+		}
+		const target = this.resolveScaleTarget();
+		return `zoom probe target=${this.scaleTargetPath || "-"} ok=${Boolean(target)} live=${this.isLiveViewer(target)} :: ${parts.join(" ; ")}`;
+	}
+
+	/**
+	 * Zoom rate for a slider level, in "scale per pixel of vertical drag".
+	 *
+	 * Calibration (requested): new levels 1 → 4 cover what the old 1 → 10
+	 * covered, with the whole ramp dropped one notch so level 1 is slower than
+	 * the old level 1, level 2 lands on the old 1, and level 4 lands on the old
+	 * maximum. Levels 5 → 10 only ease a little further up.
+	 */
+	private zoomRateFor(level: number): number {
+		// Five linear steps: level 1 is slower than the old minimum, level 5 is a
+		// little above the old maximum (about 1.09x and 3.4x per 300 px).
+		const slowest = 0.00029;
+		const strongest = 0.0041;
+		const clamped = Math.min(5, Math.max(1, level));
+		return slowest + ((strongest - slowest) * (clamped - 1)) / 4;
+	}
+
+	private beginHandZoom(event: PointerEvent): void {
+		const scroller = this.viewerContainerEl;
+		const viewer = this.resolveScaleTarget();
+		const previewEl = this.viewerEl;
+		const canZoom =
+			typeof viewer?.currentScale === "number" &&
+			(typeof this.pdfWrapper?.updateZoom === "function" ||
+				typeof viewer?.updateScale === "function");
+		const startScale = typeof viewer?.currentScale === "number" ? viewer.currentScale : 1;
+		// The preview transform needs the element that actually holds the pages.
+		const mode: "viewer" | "wheel" = canZoom && previewEl ? "viewer" : "wheel";
+		if (!scroller) {
+			this.beginPan(event);
+			return;
+		}
+		let originX = 0;
+		let originY = 0;
+		if (mode === "viewer" && previewEl) {
+			const rect = previewEl.getBoundingClientRect();
+			originX = event.clientX - rect.left;
+			originY = event.clientY - rect.top;
+		}
+		this.plugin.log(`zoom start channel=${mode} scale=${startScale}`);
+		if (mode === "wheel") this.plugin.log(this.describeZoomCandidates());
+		this.handZoom = {
+			pointerId: event.pointerId,
+			startY: event.clientY,
+			mode,
+			startScale,
+			target: startScale,
+			previewEl: mode === "viewer" ? previewEl : null,
+			originX,
+			originY,
+			startClientX: event.clientX,
+			startClientY: event.clientY,
+			anchorPage: this.anchorPageAt(event),
+			fx: this.anchorFraction(event, "x"),
+			fy: this.anchorFraction(event, "y"),
+			centerOriginX: this.centerOrigin(event, previewEl, scroller, "x"),
+			centerOriginY: this.centerOrigin(event, previewEl, scroller, "y"),
+			pageWidth: this.anchorPageAt(event)?.getBoundingClientRect().width ?? 0,
+			pageHeight: this.anchorPageAt(event)?.getBoundingClientRect().height ?? 0,
+			viewportWidth: scroller.clientWidth,
+			viewportHeight: scroller.clientHeight,
+			ticks: 0,
+			scroller,
+		};
+		this.containerEl.classList.add("pdf-ink-zooming");
+		window.addEventListener("pointermove", this.onHandZoomMove, true);
+		window.addEventListener("pointerup", this.onHandZoomEnd, true);
+		window.addEventListener("pointercancel", this.onHandZoomEnd, true);
+	}
+
+	private readonly onHandZoomMove = (event: PointerEvent): void => {
+		const zoom = this.handZoom;
+		if (!zoom || event.pointerId !== zoom.pointerId) return;
+		event.preventDefault();
+		const dy = zoom.startY - event.clientY; // dragging up zooms in
+		const speed = clamp(this.plugin.settings.handZoomSpeed ?? 3, 1, 5);
+
+		if (zoom.mode === "viewer") {
+			// Exponential, so one pixel of travel feels the same at 50% and 400 %.
+			const perPixel = this.zoomRateFor(speed);
+			const target = clamp(zoom.startScale * Math.exp(dy * perPixel), 0.1, 10);
+			zoom.target = target;
+			// Visual preview only: the engine quantises real scales to 1 %, so
+			// committing per frame would either not move or jump a whole percent.
+			if (zoom.previewEl) {
+				const ratio = target / zoom.startScale;
+				this.lastZoomRatio = ratio;
+				// Once a page fits the viewport on an axis, pdf.js centres it there
+				// and scrolling has no room left, so anchor the preview the same
+				// way instead of letting the commit visibly jump.
+				const fitsX = zoom.pageWidth > 0 && zoom.pageWidth * ratio <= zoom.viewportWidth;
+				const fitsY = zoom.pageHeight > 0 && zoom.pageHeight * ratio <= zoom.viewportHeight;
+				const originX = fitsX ? zoom.centerOriginX : zoom.originX;
+				const originY = fitsY ? zoom.centerOriginY : zoom.originY;
+				zoom.previewEl.setCssStyles({
+					transform: `scale(${ratio})`,
+					transformOrigin: `${originX}px ${originY}px`,
+				});
+			}
+			return;
+		}
+
+		this.replayWheelZoom(zoom, event, dy, speed);
+	};
+
+	/**
+	 * Fallback: replay the viewer's own Ctrl+wheel zoom, which works even when
+	 * the host does not expose a writable page scale. The host quantises this to
+	 * its own zoom steps, so it is a last resort.
+	 */
+	private replayWheelZoom(
+		zoom: NonNullable<PdfInkController["handZoom"]>,
+		event: PointerEvent,
+		dy: number,
+		speed: number,
+	): void {
+		const pixelsPerTick = 110 - speed * 8;
+		const wanted = Math.trunc(dy / pixelsPerTick);
+		if (wanted === zoom.ticks) return;
+		const direction = wanted > zoom.ticks ? -1 : 1; // wheel up = zoom in
+		const steps = Math.min(6, Math.abs(wanted - zoom.ticks));
+		zoom.ticks = wanted;
+		for (let step = 0; step < steps; step++) {
+			zoom.scroller.dispatchEvent(
+				new WheelEvent("wheel", {
+					deltaY: 120 * direction,
+					deltaMode: 0,
+					ctrlKey: true,
+					bubbles: true,
+					cancelable: true,
+					clientX: event.clientX,
+					clientY: event.clientY,
+				}),
+			);
+		}
+	}
+
+	private readonly onHandZoomEnd = (event: PointerEvent): void => {
+		const zoom = this.handZoom;
+		if (!zoom || event.pointerId !== zoom.pointerId) return;
+		this.handZoom = null;
+		this.containerEl.classList.remove("pdf-ink-zooming");
+		window.removeEventListener("pointermove", this.onHandZoomMove, true);
+		window.removeEventListener("pointerup", this.onHandZoomEnd, true);
+		window.removeEventListener("pointercancel", this.onHandZoomEnd, true);
+		if (zoom.previewEl) {
+			// Drop the preview, then apply the real scale once: the engine
+			// quantises to 1 %, which is invisible after a continuous preview.
+			zoom.previewEl.setCssStyles({ transform: "", transformOrigin: "" });
+			const ratio = zoom.target / zoom.startScale;
+			if (Math.abs(ratio - 1) >= 0.005) {
+				this.commitZoom(zoom.target, [zoom.startClientX, zoom.startClientY]);
+				this.plugin.log(
+					`zoom drag ratio=${ratio.toFixed(3)} level=${clamp(this.plugin.settings.handZoomSpeed ?? 3, 1, 5)}`,
+				);
+				window.setTimeout(() => {
+					this.plugin.log(`zoom end scale=${this.resolveScaleTarget()?.currentScale ?? "-"}`);
+				}, 150);
+				return;
+			}
+		}
+		this.plugin.log(`zoom end scale=${this.resolveScaleTarget()?.currentScale ?? "-"}`);
+	};
+
 	private beginSelection(overlay: PageOverlay, event: PointerEvent, armHold = true): void {
 		const point = this.pointFor(event, overlay);
 		if (!point) return;
+		// Endpoints win over the frame corners: on a thin line the corner
+		// handles and the ends would otherwise sit on top of each other.
+		const endpoint = this.endpointAt(overlay, point.x, point.y);
+		if (endpoint !== null) {
+			this.beginEndpointDrag(overlay, point, endpoint);
+			return;
+		}
 		const handle = this.selectionHandleAt(overlay, point.x, point.y);
 		if (handle) {
 			this.beginTransform(overlay, point, handle);
@@ -1959,7 +2504,7 @@ export class PdfInkController {
 			}
 		};
 		this.history.push({
-			label: "移动笔迹",
+			label: t("移动笔迹"),
 			undo: () => apply(move.originals),
 			redo: () => apply(after),
 		});
@@ -2075,6 +2620,100 @@ export class PdfInkController {
 	}
 
 	/* ------------------------------------------------------------------ */
+	/* Endpoint handles for a single line / arrow                          */
+	/* ------------------------------------------------------------------ */
+
+	/**
+	 * Both ends of the stroke, in css px, when the selection is exactly one
+	 * line or arrow (the only kinds whose points are just the two ends).
+	 */
+	private selectionEndpoints(overlay: PageOverlay): Array<{ x: number; y: number }> | null {
+		const selection = this.selection;
+		if (!selection || selection.page !== overlay.pageNumber) return null;
+		if (selection.ids.size !== 1) return null;
+		const stroke = this.findStrokeById(selection.ids.values().next().value as string);
+		if (!stroke || !ENDPOINT_KINDS.has(stroke.kind)) return null;
+		if (stroke.points.length < 6) return null;
+		const { width, height } = this.pageSize(overlay);
+		const points = stroke.points;
+		const last = points.length - 3;
+		return [
+			{ x: points[0] * width, y: points[1] * height },
+			{ x: points[last] * width, y: points[last + 1] * height },
+		];
+	}
+
+	private endpointAt(overlay: PageOverlay, x: number, y: number): 0 | 1 | null {
+		const ends = this.selectionEndpoints(overlay);
+		if (!ends) return null;
+		const { width, height } = this.pageSize(overlay);
+		const px = x * width;
+		const py = y * height;
+		let best: 0 | 1 | null = null;
+		let bestDistance = ENDPOINT_HANDLE_HIT_PX;
+		for (let i = 0; i < 2; i++) {
+			const distance = Math.hypot(px - ends[i].x, py - ends[i].y);
+			if (distance <= bestDistance) {
+				bestDistance = distance;
+				best = i as 0 | 1;
+			}
+		}
+		return best;
+	}
+
+	private beginEndpointDrag(overlay: PageOverlay, point: PagePoint, index: 0 | 1): void {
+		const selection = this.selection;
+		if (!selection) return;
+		const strokes = this.collectSelectedStrokes();
+		if (strokes.length !== 1) return;
+		const stroke = strokes[0];
+		if (!ENDPOINT_KINDS.has(stroke.kind)) return;
+		const frame = this.framePx(overlay);
+		if (!frame) return;
+		const { width, height } = this.pageSize(overlay);
+		this.transformSession = {
+			kind: "endpoint",
+			overlay,
+			ids: [stroke.id],
+			snapshots: new Map([[stroke.id, snapshotStroke(stroke)]]),
+			cx: frame.cx,
+			cy: frame.cy,
+			startX: point.x * width,
+			startY: point.y * height,
+			startAngle: 0,
+			frameAngle: frame.angle,
+			frame0: { ...selection.frame },
+			knobEdge: selectionKnobEdge(frame),
+			preview: null,
+			axis: null,
+			scaleX: 1,
+			scaleY: 1,
+			rotate: 0,
+			label: "",
+			endpoint: index,
+		};
+		this.setStroking(true);
+		this.plugin.log(`endpoint drag ${stroke.kind} end=${index}`);
+	}
+
+	/** Moves one end of the selected line / arrow, leaving the other pinned. */
+	private updateEndpoint(session: TransformSession, overlay: PageOverlay, point: PagePoint): void {
+		const stroke = this.findStrokeById(session.ids[0]);
+		const snapshot = session.snapshots.get(session.ids[0]);
+		if (!stroke || !snapshot) return;
+		const index = session.endpoint ?? 0;
+		// Always from the original: repeated moves must not accumulate drift.
+		restoreStroke(stroke, snapshot);
+		const points = stroke.points;
+		const at = index === 0 ? 0 : points.length - 3;
+		points[at] = point.x;
+		points[at + 1] = point.y;
+		overlay.render();
+		this.refreshSelectionFrame();
+		this.renderSelection(t("调整端点"));
+	}
+
+	/* ------------------------------------------------------------------ */
 	/* Selection transform (scale / rotate)                                */
 	/* ------------------------------------------------------------------ */
 
@@ -2173,6 +2812,10 @@ export class PdfInkController {
 		const { width, height } = this.pageSize(overlay);
 		const point = this.pointFor(event, overlay, this.rectFor(overlay));
 		if (!point) return;
+		if (session.kind === "endpoint") {
+			this.updateEndpoint(session, overlay, point);
+			return;
+		}
 		const px = point.x * width;
 		const py = point.y * height;
 		const cos = Math.cos(session.frameAngle);
@@ -2274,20 +2917,90 @@ export class PdfInkController {
 			this.renderSelection();
 		};
 		this.history.push({
-			label: session.kind === "scale" ? "缩放笔迹" : "旋转笔迹",
+			label:
+				session.kind === "scale"
+					? t("缩放笔迹")
+					: session.kind === "rotate"
+						? t("旋转笔迹")
+						: t("调整端点"),
 			undo: () => apply(session.snapshots, session.frame0),
 			redo: () => apply(after, afterFrame),
 		});
 		this.plugin.log(
-			`transform ${session.kind} scale=${session.scaleX.toFixed(3)}x${session.scaleY.toFixed(
-				3,
-			)} rotate=${((session.rotate * 180) / Math.PI).toFixed(1)}`,
+			session.kind === "endpoint"
+				? `endpoint end=${session.endpoint ?? 0}`
+				: `transform ${session.kind} scale=${session.scaleX.toFixed(3)}x${session.scaleY.toFixed(
+						3,
+					)} rotate=${((session.rotate * 180) / Math.PI).toFixed(1)}`,
 		);
 		// Bake the turned frame into a fresh tight box around the ink.
 		this.refreshSelectionFrame();
 		this.renderSelection();
 		this.markDirty();
 		this.setStroking(false);
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* Mirror selection                                                    */
+	/* ------------------------------------------------------------------ */
+
+	/** Whether every selected stroke is a kind a mirror can rewrite. */
+	get canMirrorSelection(): boolean {
+		const strokes = this.collectSelectedStrokes();
+		return strokes.length > 0 && strokes.every((stroke) => MIRROR_KINDS.has(stroke.kind));
+	}
+
+	/**
+	 * Mirrors the selection across the centre line of its own frame, so the
+	 * ink stays where it is and only its orientation changes.
+	 */
+	mirrorSelection(horizontal: boolean): boolean {
+		const selection = this.selection;
+		if (!selection) return false;
+		const overlay = this.overlays.get(selection.page);
+		if (!overlay) return false;
+		const strokes = this.collectSelectedStrokes();
+		if (strokes.length === 0) return false;
+		if (!strokes.every((stroke) => MIRROR_KINDS.has(stroke.kind))) {
+			this.notice(t("直线、箭头和多边形不能被镜像"));
+			return false;
+		}
+		const { width, height } = this.pageSize(overlay);
+		const frame = selection.frame;
+		const before = strokes.map((stroke) => snapshotStroke(stroke));
+		const transform: InkTransform = {
+			scaleX: horizontal ? -1 : 1,
+			scaleY: horizontal ? 1 : -1,
+			rotate: frame.angle,
+			local: true,
+			cx: frame.cx * width,
+			cy: frame.cy * height,
+			pageWidth: width,
+			pageHeight: height,
+		};
+		for (let i = 0; i < strokes.length; i++) {
+			applyTransform(strokes[i], before[i], transform);
+		}
+		const after = strokes.map((stroke) => snapshotStroke(stroke));
+		const apply = (snapshots: StrokeSnapshot[]): void => {
+			for (const snapshot of snapshots) {
+				const stroke = this.findStrokeById(snapshot.id);
+				if (stroke) restoreStroke(stroke, snapshot);
+			}
+			this.refreshSelectionFrame();
+			this.renderSelection();
+		};
+		this.history.push({
+			label: horizontal ? t("水平镜像笔迹") : t("垂直镜像笔迹"),
+			undo: () => apply(before),
+			redo: () => apply(after),
+		});
+		overlay.render();
+		this.refreshSelectionFrame();
+		this.renderSelection();
+		this.markDirty();
+		this.plugin.log(`mirror ${horizontal ? "horizontal" : "vertical"} n=${strokes.length}`);
+		return true;
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -2315,7 +3028,7 @@ export class PdfInkController {
 			this.renderSelection();
 		};
 		this.history.push({
-			label: "微移笔迹",
+			label: t("微移笔迹"),
 			undo: () => apply(before),
 			redo: () => apply(after),
 		});
@@ -2423,7 +3136,13 @@ export class PdfInkController {
 		// While turning, the knob stays on the edge it was grabbed from so it
 		// travels with the hand instead of hopping to another side.
 		const knobEdge = preview ? this.transformSession?.knobEdge : undefined;
-		overlay.drawSelection({ frame, handles: true, label, knobEdge });
+		overlay.drawSelection({
+			frame,
+			handles: true,
+			label,
+			knobEdge,
+			endpoints: this.selectionEndpoints(overlay) ?? undefined,
+		});
 	}
 
 	/** Selects every stroke on the visible page (Ctrl+A / select-all). */
@@ -2500,6 +3219,7 @@ export class PdfInkController {
 		// grabbing the same corner twice in quick succession must not turn into
 		// a double tap and swallow the drag.
 		if (this.selectionHandleAt(overlay, point.x, point.y)) return false;
+		if (this.endpointAt(overlay, point.x, point.y) !== null) return false;
 		const now = perf.now();
 		const previous = this.lastTap;
 		this.lastTap = { time: now, x: point.x, y: point.y };
@@ -2649,7 +3369,7 @@ export class PdfInkController {
 			page: this.selection?.page ?? 1,
 		};
 		this.plugin.log(`copy n=${strokes.length} page=${this.clipboard.page}`);
-		this.notice(`已复制 ${strokes.length} 条笔迹`);
+		this.notice(t("已复制 {count} 条笔迹", { count: strokes.length }));
 		return true;
 	}
 
@@ -2674,7 +3394,7 @@ export class PdfInkController {
 		}
 		if (removed.length === 0) return false;
 		this.history.push({
-			label: "删除笔迹",
+			label: t("删除笔迹"),
 			undo: () => {
 				for (const item of [...removed].sort((a, b) => a.index - b.index)) {
 					item.layer.strokes.splice(Math.min(item.index, item.layer.strokes.length), 0, item.stroke);
@@ -2697,12 +3417,12 @@ export class PdfInkController {
 		const clipboard = this.clipboard;
 		const doc = this.doc;
 		if (!clipboard || !doc || clipboard.strokes.length === 0) {
-			this.notice("剪贴板是空的：先复制或剪切笔迹");
+			this.notice(t("剪贴板是空的：先复制或剪切笔迹"));
 			return false;
 		}
 		const layer = this.getWritableLayer();
 		if (!layer) {
-			this.notice("当前图层被锁定或不可见，无法粘贴");
+			this.notice(t("当前图层被锁定或不可见，无法粘贴"));
 			return false;
 		}
 		// Paste lands where the pen is (hover counts), so no selection is needed.
@@ -2746,7 +3466,7 @@ export class PdfInkController {
 				: { cx: 0.5, cy: 0.5, hw: 0.1, hh: 0.1, angle: 0 },
 		};
 		this.history.push({
-			label: "粘贴",
+			label: t("粘贴"),
 			undo: () => {
 				for (const stroke of created) {
 					const index = layer.strokes.findIndex((entry) => entry.id === stroke.id);
@@ -2916,7 +3636,7 @@ export class PdfInkController {
 		this.clearSelection();
 		this.plugin.log(`stroke erase removed=${removed.length}`);
 		this.history.push({
-			label: "整笔删除",
+			label: t("整笔删除"),
 			undo: () => {
 				for (const item of [...removed].sort((a, b) => a.index - b.index)) {
 					if (layer.strokes.some((entry) => entry.id === item.stroke.id)) continue;
@@ -3087,9 +3807,17 @@ export class PdfInkController {
 			typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
 		const list = events.length > 0 ? events : [event];
 		let added = false;
+		const pageW = overlay.widthPx || 1;
+		const pageH = overlay.heightPx || 1;
 		for (const ev of list) {
-			const point = this.pointFor(ev, overlay, rect);
-			if (!point) continue;
+			const raw = this.pointFor(ev, overlay, rect);
+			if (!raw) continue;
+			const smoothed = this.jitter
+				? this.jitter.filter(raw.x * pageW, raw.y * pageH, ev.timeStamp / 1000)
+				: null;
+			const point = smoothed
+				? { x: smoothed[0] / pageW, y: smoothed[1] / pageH, p: raw.p }
+				: raw;
 			const dx = (point.x - session.lastX) * rect.width;
 			const dy = (point.y - session.lastY) * rect.height;
 			if (dx * dx + dy * dy < MIN_POINT_DISTANCE_PX ** 2) continue;
@@ -3289,6 +4017,24 @@ export class PdfInkController {
 			return;
 		}
 		const stroke = session.stroke;
+		// Smoothing lags by a frame or two, so finish the stroke where the pen
+		// actually was instead of where the filter had reluctantly arrived.
+		if (this.jitter && session.type === "freehand") {
+			const [rawX, rawY] = this.jitter.raw;
+			const pageW = session.overlay.widthPx || 1;
+			const pageH = session.overlay.heightPx || 1;
+			const count = Math.floor(stroke.points.length / 3);
+			const lastX = count > 0 ? stroke.points[(count - 1) * 3] : null;
+			const lastY = count > 0 ? stroke.points[(count - 1) * 3 + 1] : null;
+			if (count >= 2 && lastX !== null && lastY !== null) {
+				const dx = (rawX / pageW - lastX) * pageW;
+				const dy = (rawY / pageH - lastY) * pageH;
+				if (dx * dx + dy * dy > 1) {
+					stroke.points.push(rawX / pageW, rawY / pageH, stroke.points[stroke.points.length - 1]);
+				}
+			}
+			this.jitter = null;
+		}
 		// A tap with the pen must not leave a dot: treat it as "select this
 		// stroke" instead. Long-press-select is handled earlier, in onPointerUp.
 		if (
@@ -3352,7 +4098,7 @@ export class PdfInkController {
 			} layer=${layer.name}`,
 		);
 		this.history.push({
-			label: session.type === "shape" ? "形状" : "绘制",
+			label: session.type === "shape" ? t("形状") : t("绘制"),
 			undo: () => {
 				const index = layer.strokes.findIndex((entry) => entry.id === stroke.id);
 				if (index >= 0) layer.strokes.splice(index, 1);
@@ -3416,7 +4162,7 @@ export class PdfInkController {
 		if (Math.floor(stroke.points.length / 3) < 4) return null;
 		if (settings.autoShapeTrigger === "hold") {
 			const rested = perf.now() - session.lastPointAt;
-			if (rested < settings.autoShapeHoldMs) return null;
+			if (rested < Math.max(MIN_SHAPE_HOLD_MS, settings.autoShapeHoldMs)) return null;
 		}
 		const rect = this.rectFor(session.overlay);
 		if (rect.width < 10 || rect.height < 10) return null;
@@ -3449,7 +4195,7 @@ export class PdfInkController {
 		layer.strokes.push(shape);
 		const index = layer.strokes.length - 1;
 		this.history.push({
-			label: "图形识别",
+			label: t("图形识别"),
 			undo: () => {
 				const current = layer.strokes.findIndex((entry) => entry.id === shape.id);
 				if (current >= 0) layer.strokes.splice(current, 1);
@@ -3490,26 +4236,43 @@ export class PdfInkController {
 		const pageH = overlay.heightPx || 1;
 		const before = layer.strokes.slice();
 		const done = perf.start("erase.total");
-		const changed = eraseInk(
-			layer.strokes,
-			overlay.pageNumber,
-			eraser,
-			scope,
-			pageW,
-			pageH,
-			() => uid("s"),
-		);
+		const startedAt = performance.now();
+		this.plugin.opTag = "erase";
+		let changed = 0;
+		try {
+			changed = eraseInk(
+				layer.strokes,
+				overlay.pageNumber,
+				eraser,
+				scope,
+				pageW,
+				pageH,
+				() => uid("s"),
+			);
+		} catch (error) {
+			// A throwing boolean op must not take the ink down with it; report it
+			// and leave the strokes as they were.
+			this.plugin.log(`erase error=${String(error).slice(0, 200)}`);
+		}
 		done();
+		this.plugin.opTag = "idle";
+		const elapsed = performance.now() - startedAt;
+		if (elapsed > 40) {
+			this.plugin.log(
+				`erase slow scope=${scope} ms=${Math.round(elapsed)} changed=${changed} strokes=${layer.strokes.length}`,
+			);
+		}
 		if (changed === 0) {
 			this.renderNow();
 			return;
 		}
 		const after = layer.strokes.slice();
+		const removed = before.filter((entry) => !after.includes(entry));
 		this.clearSelection();
 		this.plugin.log(`erase region scope=${scope} changed=${changed}`);
 		perf.count(scope === "whole" ? "erase.whole" : "erase.partial");
 		this.history.push({
-			label: scope === "whole" ? "整笔擦除" : "擦除",
+			label: scope === "whole" ? t("整笔擦除") : t("擦除"),
 			undo: () => {
 				layer.strokes.splice(0, layer.strokes.length, ...before);
 			},
@@ -3520,7 +4283,24 @@ export class PdfInkController {
 		// Redraw only where the eraser touched: re-stroking every stroke on the
 		// page was the ~95 ms hitch that ended each erase gesture.
 		perf.count("erase.region");
-		overlay.renderRegion(this.eraseGeometryBox(eraser, pageW, pageH));
+		this.plugin.opTag = "render";
+		// A whole-stroke removal can delete ink far outside the eraser box, so the
+		// dirty region must cover those strokes too — otherwise the rest of them
+		// stays on screen as a ghost next to a clean rectangle.
+		let dirty = this.eraseGeometryBox(eraser, pageW, pageH);
+		for (const stroke of removed) {
+			const bounds = this.strokeBounds(stroke);
+			if (!Number.isFinite(bounds.x0)) continue;
+			const pad = stroke.width;
+			dirty = {
+				x0: Math.min(dirty.x0, bounds.x0 - pad),
+				y0: Math.min(dirty.y0, bounds.y0 - pad),
+				x1: Math.max(dirty.x1, bounds.x1 + pad),
+				y1: Math.max(dirty.y1, bounds.y1 + pad),
+			};
+		}
+		overlay.renderRegion(dirty);
+		this.plugin.opTag = "idle";
 		this.markDirty();
 	}
 
@@ -3843,11 +4623,11 @@ export class PdfInkController {
 		const layer = getActiveLayer(doc);
 		if (!layer) return null;
 		if (!layer.visible) {
-			this.notice("当前图层已隐藏，无法绘制");
+			this.notice(t("当前图层已隐藏，无法绘制"));
 			return null;
 		}
 		if (layer.locked) {
-			this.notice("当前图层已锁定，无法绘制");
+			this.notice(t("当前图层已锁定，无法绘制"));
 			return null;
 		}
 		return layer;
@@ -4087,7 +4867,7 @@ export class PdfInkController {
 	private notice(message: string): void {		const now = Date.now();
 		if (now - this.lastNotice < 2000) return;
 		this.lastNotice = now;
-		new Notice(`[PDF Ink] ${message}`);
+		new Notice(`[Inkstone PDF] ${message}`);
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -4217,12 +4997,12 @@ export class PdfInkController {
 	addLayer(): Layer | null {
 		const doc = this.doc;
 		if (!doc) return null;
-		const layer = createLayer(`图层 ${doc.layers.length + 1}`);
+		const layer = createLayer(t("图层 {count}", { count: doc.layers.length + 1 }));
 		doc.layers.push(layer);
 		doc.activeLayerId = layer.id;
 		const previousActive = doc.activeLayerId;
 		this.history.push({
-			label: "新建图层",
+			label: t("新建图层"),
 			undo: () => {
 				const index = doc.layers.indexOf(layer);
 				if (index >= 0) doc.layers.splice(index, 1);
@@ -4249,7 +5029,7 @@ export class PdfInkController {
 		doc.layers.splice(index, 1);
 		let fallback: Layer | null = null;
 		if (doc.layers.length === 0) {
-			fallback = createLayer("图层 1");
+			fallback = createLayer(t("图层 1"));
 			doc.layers.push(fallback);
 			doc.activeLayerId = fallback.id;
 		} else if (doc.activeLayerId === layer.id) {
@@ -4257,7 +5037,7 @@ export class PdfInkController {
 		}
 		const createdFallback = fallback;
 		this.history.push({
-			label: "删除图层",
+			label: t("删除图层"),
 			undo: () => {
 				if (createdFallback) {
 					const fallbackIndex = doc.layers.indexOf(createdFallback);
@@ -4334,7 +5114,7 @@ export class PdfInkController {
 		const [layer] = doc.layers.splice(index, 1);
 		doc.layers.splice(target, 0, layer);
 		this.history.push({
-			label: "调整图层顺序",
+			label: t("调整图层顺序"),
 			undo: () => {
 				const current = doc.layers.indexOf(layer);
 				if (current < 0) return;

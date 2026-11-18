@@ -25,7 +25,7 @@ export class InkStorage {
 
 	get folder(): string {
 		const raw = (this.getFolder() ?? "").replace(/^\/+|\/+$/g, "");
-		return normalizeVaultPath(raw.length > 0 ? raw : "PDF Ink");
+		return normalizeVaultPath(raw.length > 0 ? raw : "Inkstone PDF");
 	}
 
 	pathFor(filePath: string): string {

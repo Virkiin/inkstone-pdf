@@ -3,6 +3,7 @@ import type { PdfInkController } from "../controller";
 import type PdfInkPlugin from "../main";
 import type { Layer } from "../types";
 import { ConfirmModal } from "./confirm";
+import { t } from "../i18n";
 
 /**
  * The layers list, shared by the sidebar view and the floating popover so both
@@ -49,19 +50,19 @@ export function renderLayersInto(container: HTMLElement, plugin: PdfInkPlugin): 
 		doc,
 		"div",
 		"pdf-ink-layers-title",
-		controller?.filePath?.split("/").pop() ?? "PDF 墨迹",
+		controller?.filePath?.split("/").pop() ?? "Inkstone PDF",
 	);
 	const subtitle = el(
 		doc,
 		"div",
 		"pdf-ink-layers-subtitle",
-		ink ? `${ink.layers.length} 个图层` : "尚未打开 PDF",
+		ink ? t("{count} 个图层", { count: ink.layers.length }) : t("尚未打开 PDF"),
 	);
 	titleWrap.append(title, subtitle);
 	header.appendChild(titleWrap);
-	iconButton(header, "plus", "新建图层", () => {
+	iconButton(header, "plus", t("新建图层"), () => {
 		if (!controller) {
-			new Notice("[PDF Ink] 请先打开一个 PDF 文件");
+			new Notice(t("[Inkstone PDF] 请先打开一个 PDF 文件"));
 			return;
 		}
 		controller.addLayer();
@@ -74,7 +75,7 @@ export function renderLayersInto(container: HTMLElement, plugin: PdfInkPlugin): 
 				doc,
 				"div",
 				"pdf-ink-layers-empty",
-				"打开一个 PDF，点击铅笔（或命令「PDF Ink: 开启/关闭绘制模式」）即可开始批注。笔迹会按图层保存。",
+				t("打开一个 PDF，点击铅笔（或命令「Inkstone PDF: 开启/关闭绘制模式」）即可开始批注。笔迹会按图层保存。"),
 			),
 		);
 		return;
@@ -94,7 +95,7 @@ export function renderLayersInto(container: HTMLElement, plugin: PdfInkPlugin): 
 			doc,
 			"div",
 			"pdf-ink-layers-hint",
-			"列表从上到下即绘制层级（上方覆盖下方）。双击图层名可重命名。",
+			t("列表从上到下即绘制层级（上方覆盖下方）。双击图层名可重命名。"),
 		),
 	);
 }
@@ -113,10 +114,10 @@ function renderLayerRow(
 	row.classList.toggle("is-hidden", !layer.visible);
 	row.addEventListener("click", () => controller.setActiveLayer(layer.id));
 
-	iconButton(row, layer.visible ? "eye" : "eye-off", layer.visible ? "隐藏图层" : "显示图层", () =>
+	iconButton(row, layer.visible ? "eye" : "eye-off", layer.visible ? t("隐藏图层") : t("显示图层"), () =>
 		controller.setLayerVisible(layer.id, !layer.visible),
 	);
-	iconButton(row, layer.locked ? "lock" : "unlock", layer.locked ? "解锁图层" : "锁定图层", () =>
+	iconButton(row, layer.locked ? "lock" : "unlock", layer.locked ? t("解锁图层") : t("锁定图层"), () =>
 		controller.setLayerLocked(layer.id, !layer.locked),
 	);
 
@@ -128,14 +129,14 @@ function renderLayerRow(
 	row.appendChild(name);
 
 	const actions = el(doc, "div", "pdf-ink-layer-actions");
-	iconButton(actions, "chevron-up", "上移一层", () => controller.moveLayer(layer.id, 1));
-	iconButton(actions, "chevron-down", "下移一层", () => controller.moveLayer(layer.id, -1));
-	iconButton(actions, "trash-2", "删除图层", () => {
+	iconButton(actions, "chevron-up", t("上移一层"), () => controller.moveLayer(layer.id, 1));
+	iconButton(actions, "chevron-down", t("下移一层"), () => controller.moveLayer(layer.id, -1));
+	iconButton(actions, "trash-2", t("删除图层"), () => {
 		new ConfirmModal(
 			plugin.app,
-			"删除图层",
-			`确定删除「${layer.name}」吗？`,
-			"删除",
+			t("删除图层"),
+			t("确定删除「{name}」吗？", { name: layer.name }),
+			t("删除"),
 			() => controller.deleteLayer(layer.id),
 		).open();
 	});
@@ -150,7 +151,7 @@ function renderOpacity(
 	controller: PdfInkController,
 ): HTMLElement {
 	const wrap = el(doc, "div", "pdf-ink-layers-opacity");
-	wrap.appendChild(el(doc, "span", "pdf-ink-layers-opacity-label", "不透明度"));
+	wrap.appendChild(el(doc, "span", "pdf-ink-layers-opacity-label", t("不透明度")));
 	const input = el(doc, "input", "pdf-ink-layers-opacity-input") as HTMLInputElement;
 	input.type = "range";
 	input.min = "10";

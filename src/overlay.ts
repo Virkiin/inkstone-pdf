@@ -484,6 +484,8 @@ export class PageOverlay {
 			label?: string;
 			/** pin the rotate knob to one edge (used mid-rotation) */
 			knobEdge?: number;
+			/** drag handles for both ends of a selected line / arrow */
+			endpoints?: Array<{ x: number; y: number }>;
 		} = {},
 	): void {
 		if (this.destroyed) return;
@@ -547,6 +549,14 @@ export class PageOverlay {
 			ctx.arc(knob.x, knob.y, 5.5, 0, Math.PI * 2);
 			ctx.fill();
 			ctx.stroke();
+			// Line / arrow ends: round handles so they read differently from the
+			// square frame corners that scale the whole selection.
+			for (const end of options.endpoints ?? []) {
+				ctx.beginPath();
+				ctx.arc(end.x, end.y, 6.5, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.stroke();
+			}
 			ctx.restore();
 		}
 

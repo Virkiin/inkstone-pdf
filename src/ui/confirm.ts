@@ -1,5 +1,6 @@
 import { Modal } from "obsidian";
 import type { App } from "obsidian";
+import { t } from "../i18n";
 
 /**
  * Destructive-action confirmation. Obsidian has no built-in confirm dialog and
@@ -20,7 +21,7 @@ export class ConfirmModal extends Modal {
 		this.titleEl.setText(this.title);
 		this.contentEl.createEl("p", { text: this.message });
 		const row = this.contentEl.createDiv("pdf-ink-confirm-row");
-		const cancel = row.createEl("button", { text: "取消" });
+		const cancel = row.createEl("button", { text: t("取消") });
 		const confirm = row.createEl("button", {
 			text: this.confirmLabel,
 			cls: "mod-warning",

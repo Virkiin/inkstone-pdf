@@ -86,6 +86,12 @@
 	cursor: grabbing;
 }
 
+/* Hand tool + Shift: the vertical drag is a zoom slider, so say so. */
+.pdf-ink-host.pdf-ink-tool-hand.pdf-ink-zooming .pdf-container .page,
+.pdf-ink-host.pdf-ink-tool-hand.pdf-ink-zooming .pdf-container .page * {
+	cursor: ns-resize;
+}
+
 .pdf-ink-host.pdf-ink-cursor-point:not(.pdf-ink-alt) .pdf-container .page,
 .pdf-ink-host.pdf-ink-cursor-point:not(.pdf-ink-alt) .pdf-container .page * {
 	cursor:
@@ -602,6 +608,23 @@
 	opacity: 0.45;
 	cursor: default;
 	}
+
+/* Mirror: two axes side by side, sharing one row of the menu. */
+.pdf-ink-selection-row {
+	display: flex;
+	gap: 2px;
+}
+
+.pdf-ink-selection-item-compact {
+	flex: 1 1 0;
+	justify-content: center;
+	gap: 4px;
+	padding: 6px 4px;
+}
+
+.pdf-ink-selection-item-compact span:last-child {
+	font-size: var(--font-ui-smaller, 11px);
+}
 
 /* --- quick colors on the toolbar ----------------------------------------- */
 

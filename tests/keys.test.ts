@@ -10,7 +10,9 @@ import {
 	normalizeSpec,
 	resolveBindings,
 	specFromEvent,
+	toggleToolTarget,
 } from "../src/keys";
+import type { ToolName } from "../src/types";
 
 /** Minimal KeyboardEvent stand-in: only the fields the matcher reads. */
 const key = (
@@ -34,6 +36,15 @@ test("keys: defaults keep the old hand-feel", () => {
 	assert.equal(bindings["color:1"], "1");
 	assert.equal(bindings["color:9"], "9");
 	assert.deepEqual(bindings, defaultBindings());
+});
+
+test("keys: the pen / hand toggle flips and falls back to the pen", () => {
+	const pair: [ToolName, ToolName] = ["pen", "hand"];
+	assert.equal(toggleToolTarget("pen", pair), "hand");
+	assert.equal(toggleToolTarget("hand", pair), "pen");
+	for (const other of ["highlighter", "eraser", "select", "line", "arrow", "rect", "ellipse"] as ToolName[]) {
+		assert.equal(toggleToolTarget(other, pair), "pen", `${other} goes to the pen`);
+	}
 });
 
 test("keys: untouched actions follow later default changes", () => {
@@ -102,7 +113,7 @@ test("keys: dispatch picks the action, and rebinding moves it", () => {
 	const defaults = resolveBindings(undefined);
 	assert.equal(actionIdForSpec("p", defaults), "tool:pen");
 	assert.equal(actionIdForSpec("1", defaults), "color:1");
-	assert.equal(actionIdForSpec("q", defaults), null);
+	assert.equal(actionIdForSpec("j", defaults), null);
 
 	const rebound = resolveBindings({ "tool:pen": "k" });
 	assert.equal(actionIdForSpec("k", rebound), "tool:pen");
@@ -110,9 +121,9 @@ test("keys: dispatch picks the action, and rebinding moves it", () => {
 });
 
 test("keys: duplicate bindings are reported", () => {
-	const bindings = resolveBindings({ "tool:pen": "q", "tool:eraser": "q" });
+	const bindings = resolveBindings({ "tool:pen": "j", "tool:eraser": "j" });
 	const conflicts = findConflicts(bindings);
-	assert.deepEqual(conflicts["q"].sort(), ["tool:eraser", "tool:pen"]);
+	assert.deepEqual(conflicts["j"].sort(), ["tool:eraser", "tool:pen"]);
 	assert.equal(Object.keys(findConflicts(resolveBindings(undefined))).length, 0);
 });
 

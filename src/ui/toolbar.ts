@@ -2,6 +2,7 @@ import { setIcon, setTooltip } from "obsidian";
 import type { PresetKind } from "../brush";
 import type { PdfInkController } from "../controller";
 import type PdfInkPlugin from "../main";
+import { t, uiLanguage } from "../i18n";
 import type { Brush } from "../main";
 import type { ToolName } from "../types";
 import { BrushPanel } from "./brush-panel";
@@ -28,6 +29,7 @@ export class PdfInkToolbar {
 	private readonly toolButtons = new Map<ToolName, HTMLButtonElement>();
 	private undoButton!: HTMLButtonElement;
 	private redoButton!: HTMLButtonElement;
+	private layersButton!: HTMLButtonElement;
 	private colorDot!: HTMLElement;
 	private colorChip!: HTMLElement;
 	private quickRow!: HTMLElement;
@@ -41,6 +43,8 @@ export class PdfInkToolbar {
 	private lastQuickSignature = "";
 	private lastChipText = "";
 	private lastLayoutLabel = "";
+	/** language the labels were rendered in, so a switch can re-label once */
+	private lastLanguage = "";
 	private modeMenu: HTMLElement | null = null;
 	private modeMenuAnchor: HTMLElement | null = null;
 	private collapsed = false;
@@ -101,7 +105,7 @@ export class PdfInkToolbar {
 		this.toggleButton.type = "button";
 		this.toggleButton.className = "pdf-ink-btn pdf-ink-toggle-btn";
 		setIcon(this.toggleButton, "chevrons-right");
-		setTooltip(this.toggleButton, "收起工具栏");
+		setTooltip(this.toggleButton, t("收起工具栏"));
 		this.toggleButton.addEventListener("click", (event) => {
 			event.stopPropagation();
 			this.setCollapsed(!this.collapsed);
@@ -109,13 +113,13 @@ export class PdfInkToolbar {
 		this.el.appendChild(this.toggleButton);
 
 		for (const entry of TOOLS) {
-			this.toolButton(entry.tool, entry.icon, entry.label);
+			this.toolButton(entry.tool, entry.icon, t(entry.label));
 		}
 
 		this.divider();
 
 		for (const entry of SHAPES) {
-			this.toolButton(entry.tool, entry.icon, entry.label);
+			this.toolButton(entry.tool, entry.icon, t(entry.label));
 		}
 
 		this.divider();
@@ -133,18 +137,18 @@ export class PdfInkToolbar {
 
 		this.divider();
 
-		this.undoButton = this.button("undo-2", "撤销 (Ctrl+Z)", () => this.controller.undo());
-		this.redoButton = this.button("redo-2", "重做 (Ctrl+Shift+Z)", () =>
+		this.undoButton = this.button("undo-2", t("撤销 (Ctrl+Z)"), () => this.controller.undo());
+		this.redoButton = this.button("redo-2", t("重做 (Ctrl+Shift+Z)"), () =>
 			this.controller.redo(),
 		);
 
 		this.divider();
 
-		const layersButton = this.button("layers", "图层面板", () =>
+		this.layersButton = this.button("layers", t("图层面板"), () =>
 			this.plugin.toggleLayersPanel(this.el),
 		);
-		layersButton.classList.add("pdf-ink-layers-button");
-		this.layoutButton = this.button("layout-template", "切换工具栏布局", () =>
+		this.layersButton.classList.add("pdf-ink-layers-button");
+		this.layoutButton = this.button("layout-template", t("切换工具栏布局"), () =>
 			this.plugin.cycleToolbarLayout(),
 		);
 
@@ -154,7 +158,7 @@ export class PdfInkToolbar {
 		this.layerChip.addEventListener("click", () =>
 			this.plugin.toggleLayersPanel(this.el),
 		);
-		setTooltip(this.layerChip, "当前图层，点击打开图层面板");
+		setTooltip(this.layerChip, t("当前图层，点击打开图层面板"));
 		this.el.appendChild(this.layerChip);
 	}
 
@@ -247,11 +251,11 @@ export class PdfInkToolbar {
 			options: Array<{ value: string; label: string }>;
 		}> = [
 			{
-				title: "选择区域",
+				title: t("选择区域"),
 				axis: "select",
 				options: [
-					{ value: "rect", label: "矩形选择" },
-					{ value: "lasso", label: "套索选择" },
+					{ value: "rect", label: t("矩形选择") },
+					{ value: "lasso", label: t("套索选择") },
 				],
 			},
 		];
@@ -380,7 +384,7 @@ export class PdfInkToolbar {
 		// Rebuilding the row on every commit is a mutation storm for whoever
 		// observes the workspace, so only rebuild when something really changed.
 		const current = visible ? this.currentBrush().color.toLowerCase() : "";
-		const signature = `${visible ? "1" : "0"}|${current}|${this.plugin.settings.quickColors.join(",")}`;
+		const signature = `${visible ? "1" : "0"}|${current}|${this.plugin.settings.quickColors.join(",")}|${uiLanguage()}`;
 		if (signature === this.lastQuickSignature) return;
 		this.lastQuickSignature = signature;
 		while (row.firstChild) row.removeChild(row.firstChild);
@@ -391,8 +395,9 @@ export class PdfInkToolbar {
 			swatch.type = "button";
 			swatch.className = "pdf-ink-quick-color";
 			swatch.setCssStyles({ backgroundColor: color });
-			swatch.setAttribute("aria-label", `${color}（长按替换为当前笔色）`);
-			setTooltip(swatch, `${color}（长按替换为当前笔色）`);
+			const swatchLabel = t("{color}（长按替换为当前笔色）", { color });
+			swatch.setAttribute("aria-label", swatchLabel);
+			setTooltip(swatch, swatchLabel);
 			if (color.toLowerCase() === current) swatch.classList.add("is-active");
 			swatch.addEventListener("pointerdown", (event) => {
 				if (event.button !== 0) return;
@@ -555,7 +560,10 @@ export class PdfInkToolbar {
 		if (this.lastToggleIcon !== icon) {
 			this.lastToggleIcon = icon;
 			setIcon(this.toggleButton, icon);
-			setTooltip(this.toggleButton, this.collapsed ? "展开工具栏" : "收起工具栏");
+			setTooltip(
+				this.toggleButton,
+				t(this.collapsed ? "展开工具栏" : "收起工具栏"),
+			);
 		}
 	}
 
@@ -564,6 +572,11 @@ export class PdfInkToolbar {
 	}
 
 	update(): void {
+		const language = uiLanguage();
+		if (this.lastLanguage !== language) {
+			this.lastLanguage = language;
+			this.applyStaticLabels();
+		}
 		const layout = this.plugin.settings.toolbarLayout ?? "horizontal";
 		this.el.classList.toggle("pdf-ink-layout-vertical", layout === "vertical");
 		this.el.classList.toggle("pdf-ink-layout-square", layout === "square");
@@ -578,13 +591,15 @@ export class PdfInkToolbar {
 
 		this.undoButton.disabled = !this.controller.history.canUndo;
 		this.redoButton.disabled = !this.controller.history.canRedo;
-		const layoutLabel = `切换工具栏布局（当前：${
-			this.plugin.settings.toolbarLayout === "vertical"
-				? "纵向"
-				: this.plugin.settings.toolbarLayout === "square"
-					? "方形"
-					: "横向"
-		}）`;
+		const layoutLabel = t("切换工具栏布局（当前：{layout}）", {
+			layout: t(
+				this.plugin.settings.toolbarLayout === "vertical"
+					? "纵向"
+					: this.plugin.settings.toolbarLayout === "square"
+						? "方形"
+						: "横向",
+			),
+		});
 		if (this.layoutButton && this.lastLayoutLabel !== layoutLabel) {
 			this.lastLayoutLabel = layoutLabel;
 			this.layoutButton.setAttribute("aria-label", layoutLabel);
@@ -592,7 +607,7 @@ export class PdfInkToolbar {
 
 		const doc = this.controller.doc;
 		const layer = doc ? doc.layers.find((entry) => entry.id === doc.activeLayerId) : null;
-		const chipText = layer ? `图层：${layer.name}` : "无图层";
+		const chipText = layer ? t("图层：{name}", { name: layer.name }) : t("无图层");
 		if (this.lastChipText !== chipText) {
 			this.lastChipText = chipText;
 			this.layerChip.textContent = chipText;
@@ -601,6 +616,36 @@ export class PdfInkToolbar {
 			"is-warning",
 			!!layer && (!layer.visible || layer.locked),
 		);
+	}
+
+	/**
+	 * Re-applies the labels that are rendered once in `build()`. Called when the
+	 * UI language changed; everything language-independent keeps its cached text.
+	 */
+	private applyStaticLabels(): void {
+		setTooltip(this.toggleButton, t(this.collapsed ? "展开工具栏" : "收起工具栏"));
+		for (const entry of [...TOOLS, ...SHAPES]) {
+			const button = this.toolButtons.get(entry.tool);
+			if (!button) continue;
+			button.setAttribute("aria-label", t(entry.label));
+			setTooltip(button, t(entry.label));
+		}
+		const fixed: Array<[HTMLButtonElement, string]> = [
+			[this.undoButton, "撤销 (Ctrl+Z)"],
+			[this.redoButton, "重做 (Ctrl+Shift+Z)"],
+			[this.layersButton, "图层面板"],
+			[this.layoutButton, "切换工具栏布局"],
+		];
+		for (const [button, label] of fixed) {
+			if (!button) continue;
+			button.setAttribute("aria-label", t(label));
+			setTooltip(button, t(label));
+		}
+		setTooltip(this.layerChip, t("当前图层，点击打开图层面板"));
+		// Clear the caches so update() re-renders the derived labels.
+		this.lastToggleIcon = "";
+		this.lastLayoutLabel = "";
+		this.lastChipText = "";
 	}
 
 	destroy(): void {

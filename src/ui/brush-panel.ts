@@ -7,8 +7,13 @@ import type PdfInkPlugin from "../main";
 import type { EraserRegion, EraserScope, Stroke } from "../types";
 import { clamp } from "../util";
 import { boxOf, placeFloating } from "./place";
+import { t, translateBuiltin } from "../i18n";
 
-const TITLES: Record<PresetKind, string> = {
+/**
+ * Tool names for the panel title. Kept as sources and translated at render
+ * time: a module-level `t()` would freeze the language at import.
+ */
+const TITLE_SOURCES: Record<PresetKind, string> = {
 	pen: "钢笔",
 	highlighter: "荧光笔",
 	eraser: "橡皮",
@@ -106,7 +111,7 @@ export class BrushPanel {
 
 		const title = this.doc.createElement("div");
 		title.className = "pdf-ink-panel-title";
-		title.textContent = TITLES[kind];
+		title.textContent = t(TITLE_SOURCES[kind]);
 		el.appendChild(title);
 
 		this.presetRow = this.doc.createElement("div");
@@ -153,18 +158,18 @@ export class BrushPanel {
 	/* ------------------------------------------------------------------ */
 
 	private buildBrushBody(el: HTMLElement): void {
-		this.heading(el, "调色板");
+		this.heading(el, t("调色板"));
 		this.paletteGrid = this.doc.createElement("div");
 		this.paletteGrid.className = "pdf-ink-panel-grid";
 		el.appendChild(this.paletteGrid);
 
-		this.heading(el, "粗细");
+		this.heading(el, t("粗细"));
 		this.widthInput = this.slider(el, 0.5, 20, 0.5, (value) =>
 			this.plugin.setBrushWidth(this.kind, value),
 		);
 		this.widthValue = this.widthInput.nextElementSibling as HTMLElement;
 
-		this.heading(el, "不透明度");
+		this.heading(el, t("不透明度"));
 		this.opacityInput = this.slider(el, 10, 100, 5, (value) =>
 			this.plugin.setBrushOpacity(this.kind === "highlighter" ? "highlighter" : "pen", value / 100),
 		);
@@ -177,30 +182,30 @@ export class BrushPanel {
 	}
 
 	private buildEraserBody(el: HTMLElement): void {
-		this.heading(el, "擦除方式");
+		this.heading(el, t("擦除方式"));
 		this.segmented(
 			el,
 			"scope",
 			[
-				{ value: "partial", label: SCOPE_LABELS.partial },
-				{ value: "whole", label: SCOPE_LABELS.whole },
+				{ value: "partial", label: t(SCOPE_LABELS.partial) },
+				{ value: "whole", label: t(SCOPE_LABELS.whole) },
 			],
 			(value) => this.plugin.setEraserScope(value as EraserScope),
 		);
 
-		this.heading(el, "擦除区域");
+		this.heading(el, t("擦除区域"));
 		this.segmented(
 			el,
 			"region",
 			[
-				{ value: "free", label: REGION_LABELS.free },
-				{ value: "rect", label: REGION_LABELS.rect },
-				{ value: "lasso", label: REGION_LABELS.lasso },
+				{ value: "free", label: t(REGION_LABELS.free) },
+				{ value: "rect", label: t(REGION_LABELS.rect) },
+				{ value: "lasso", label: t(REGION_LABELS.lasso) },
 			],
 			(value) => this.plugin.setEraserRegion(value as EraserRegion),
 		);
 
-		this.heading(el, "橡皮半径");
+		this.heading(el, t("橡皮半径"));
 		this.widthInput = this.slider(el, 4, 48, 1, (value) =>
 			this.plugin.setBrushWidth("eraser", value),
 		);
@@ -329,7 +334,7 @@ export class BrushPanel {
 		add.type = "button";
 		add.className = "pdf-ink-preset-add";
 		add.textContent = "＋";
-		setTooltip(add, "把当前笔刷状态存成预设");
+		setTooltip(add, t("把当前笔刷状态存成预设"));
 		add.addEventListener("click", (event) => {
 			event.preventDefault();
 			event.stopPropagation();
@@ -354,13 +359,15 @@ export class BrushPanel {
 		}
 		const name = this.doc.createElement("span");
 		name.className = "pdf-ink-preset-name";
-		name.textContent = preset.name;
+		name.textContent = translateBuiltin(preset.name);
 		chip.append(swatch, name);
 		chip.title =
 			this.kind === "eraser"
-				? `${REGION_LABELS[(preset as EraserPreset).region]} · ${
-						SCOPE_LABELS[(preset as EraserPreset).scope]
-					} · 半径 ${formatWidth((preset as EraserPreset).widthPx)}px`
+				? t("{region} · {scope} · 半径 {width}px", {
+						region: t(REGION_LABELS[(preset as EraserPreset).region]),
+						scope: t(SCOPE_LABELS[(preset as EraserPreset).scope]),
+						width: formatWidth((preset as EraserPreset).widthPx),
+					})
 				: `${(preset as BrushPreset).color} · ${formatWidth((preset as BrushPreset).widthPx)}px · ${Math.round((preset as BrushPreset).opacity * 100)}%`;
 		chip.addEventListener("click", (event) => {
 			event.preventDefault();
@@ -409,14 +416,14 @@ export class BrushPanel {
 		menu.className = "pdf-ink-preset-menu";
 		const items: Array<[string, () => void]> = [
 			[
-				"重命名",
+				t("重命名"),
 				() => {
 					this.closeMenu();
 					this.startRename(anchor, preset);
 				},
 			],
 			[
-				"覆盖为当前",
+				t("覆盖为当前"),
 				() => {
 					this.plugin.overwritePreset(this.kind, preset.id);
 					this.closeMenu();
@@ -424,7 +431,7 @@ export class BrushPanel {
 				},
 			],
 			[
-				"删除",
+				t("删除"),
 				() => {
 					this.plugin.deletePreset(this.kind, preset.id);
 					this.closeMenu();
@@ -514,7 +521,7 @@ export class BrushPanel {
 			swatch.setCssStyles({ backgroundColor: color });
 			swatch.dataset.index = String(index);
 			swatch.setAttribute("aria-label", color);
-			setTooltip(swatch, `${color}（长按改色，拖出面板删除）`);
+			setTooltip(swatch, t("{color}（长按改色，拖出面板删除）", { color }));
 			if (color.toLowerCase() === current.toLowerCase()) swatch.classList.add("is-active");
 			this.bindPaletteSwatch(swatch, index, color);
 			grid.appendChild(swatch);
@@ -523,13 +530,13 @@ export class BrushPanel {
 		add.type = "button";
 		add.className = "pdf-ink-panel-swatch pdf-ink-swatch-add";
 		add.textContent = "＋";
-		setTooltip(add, "把当前笔色加进调色板");
+		setTooltip(add, t("把当前笔色加进调色板"));
 		add.addEventListener("click", (event) => {
 			event.preventDefault();
 			event.stopPropagation();
 			const brush = this.plugin.brushFor(this.kind === "highlighter" ? "highlighter" : "pen");
 			if (this.plugin.settings.palette.some((entry) => entry.toLowerCase() === brush.color.toLowerCase())) {
-				new Notice("[PDF Ink] 这个颜色已经在调色板里了");
+				new Notice(t("[Inkstone PDF] 这个颜色已经在调色板里了"));
 				return;
 			}
 			this.plugin.addPaletteColor(brush.color);
@@ -682,17 +689,17 @@ export class BrushPanel {
 			lightSlider.setCssStyles({ backgroundImage: `linear-gradient(to right, #000, hsl(${hue} ${sat}% 50%), #fff)` });
 		};
 
-		const hueSlider = row("色相", 360, hue, (next) => {
+		const hueSlider = row(t("色相"), 360, hue, (next) => {
 			hue = next;
 			paintGradients();
 			fromSliders();
 		});
-		const satSlider = row("饱和", 100, sat, (next) => {
+		const satSlider = row(t("饱和"), 100, sat, (next) => {
 			sat = next;
 			paintGradients();
 			fromSliders();
 		});
-		const lightSlider = row("明度", 100, light, (next) => {
+		const lightSlider = row(t("明度"), 100, light, (next) => {
 			light = next;
 			paintGradients();
 			fromSliders();

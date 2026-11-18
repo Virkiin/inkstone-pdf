@@ -51,6 +51,12 @@ export interface InkTransform {
 
 const ELLIPSE_SAMPLES = 48;
 
+/** Clamps a scale's magnitude, keeping its sign (a mirror is a negative scale). */
+function clampScale(value: number): number {
+	const safe = Number.isFinite(value) && value !== 0 ? value : 1;
+	return Math.sign(safe) * clamp(Math.abs(safe), 0.02, 40);
+}
+
 export function snapshotStroke(stroke: Stroke): StrokeSnapshot {
 	return {
 		id: stroke.id,
@@ -106,8 +112,9 @@ export function applyTransform(
 ): void {
 	const { pageWidth: width, pageHeight: height } = transform;
 	if (width <= 0 || height <= 0) return;
-	const scaleX = clamp(transform.scaleX, 0.02, 40);
-	const scaleY = clamp(transform.scaleY, 0.02, 40);
+	// Negative scales are a mirror, so the magnitude is what gets clamped.
+	const scaleX = clampScale(transform.scaleX);
+	const scaleY = clampScale(transform.scaleY);
 	const cos = Math.cos(transform.rotate);
 	const sin = Math.sin(transform.rotate);
 	// Linear part of the transform.

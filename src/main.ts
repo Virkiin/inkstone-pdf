@@ -1,8 +1,9 @@
-import { Events, Notice, Plugin } from "obsidian";
-import type { WorkspaceLeaf } from "obsidian";
+import { Events, Notice, Plugin, getLanguage } from "obsidian";
+import type { Command, WorkspaceLeaf } from "obsidian";
 import type { BrushKind, BrushPreset, EraserPreset, PresetKind } from "./brush";
 import { autoPresetName, clonePresets, eraserPresetName } from "./brush";
 import { PdfInkController } from "./controller";
+import { setUiLanguage, t } from "./i18n";
 import {
 	ACTIONS,
 	actionIdForSpec,
@@ -10,6 +11,7 @@ import {
 	parseKeySpec,
 	resolveBindings,
 	specFromEvent,
+	toggleToolTarget,
 } from "./keys";
 import { setCanvasPixelBudget, setLowLatencyLive } from "./overlay";
 import { perf } from "./perf";
@@ -35,15 +37,30 @@ export interface Brush {
  */
 const HOLD_RELEASE_GUARD_MS = 250;
 
+/**
+ * Dead zone, per axis, for the Shift + drag brush adjustment. Without it a
+ * diagonal movement changes the width *and* the opacity at once, which reads as
+ * "I tried to resize and it also got fainter".
+ */
+const BRUSH_ADJUST_DEAD_ZONE_PX = 3;
+
 export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { ...DEFAULT_SETTINGS };
 	storage!: InkStorage;
 	emitter = new Events();
 	tool: ToolName = "pen";
+	/** last heavy step, printed by the stall watchdog */
+	opTag = "idle";
 	/** Shared between PDF leaves so copy in one tab pastes in another. */
 	inkClipboard: { strokes: Stroke[]; page: number } | null = null;
+	/**
+	 * Registered commands plus the Chinese source of their name, so a language
+	 * switch can relabel them instead of asking for a plugin reload.
+	 */
+	private readonly localizedCommands: Array<{ command: Command; source: string }> = [];
+	/** true when this run seeded the default brush presets (their names need translating) */
+	private seededPresets = false;
 
-	/** temporary tool while a "hold" key or the pen side button is down */
-	private tempTool: {
+	/** temporary tool while a "hold" key or the pen side button is down */	private tempTool: {
 		prev: ToolName;
 		channel: "key" | "mouse";
 		/** the key spec that armed it, so the right keyup can end it */
@@ -72,7 +89,31 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		setUiLanguage(this.settings.language, getLanguage());
+		// The defaults are seeded in Chinese; rename them in the language the user
+		// will actually see (user-renamed presets are never touched later).
+		if (this.seededPresets) {
+			for (const kind of ["pen", "highlighter", "eraser"] as const) {
+				for (const preset of this.settings.brushPresets[kind]) preset.name = t(preset.name);
+			}
+		}
 		this.applyInkQuality();
+		// Stall watchdog: if the main thread skips more than a few ticks of a
+		// 250 ms timer, report how long for and which step was running. This is
+		// the only reliable way to see a freeze that produces no longtask entry.
+		// Guarded: test harnesses have no interval lifetime management, and a
+		// stray interval would keep the process alive forever.
+		if (typeof this.registerInterval === "function") {
+			let lastTick = performance.now();
+			this.registerInterval(
+				window.setInterval(() => {
+					const now = performance.now();
+					const drift = now - lastTick - 250;
+					lastTick = now;
+					if (drift > 500) this.log(`stall ${Math.round(drift)}ms tag=${this.opTag}`);
+				}, 250),
+			);
+		}
 		this.applyBlurShield();
 		this.storage = new InkStorage(
 			this.app,
@@ -82,7 +123,7 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 
 		this.registerView(VIEW_TYPE_LAYERS, (leaf) => new InkLayersView(leaf, this));
 		this.addSettingTab(new PdfInkSettingTab(this.app, this));
-		this.addRibbonIcon("pencil", "PDF 墨迹：开启/关闭绘制", () => this.toggleDrawing());
+		this.addRibbonIcon("pencil", t("Inkstone PDF：开启/关闭绘制"), () => this.toggleDrawing());
 		this.registerCommands();
 
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.scanLeaves()));
@@ -260,10 +301,17 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		this.settings.penOpacity = Number.isFinite(this.settings.penOpacity)
 			? clamp(this.settings.penOpacity, 0.05, 1)
 			: 1;
+		// The zoom sensitivity slider used to be 1–10; keep stored values in range.
+		this.settings.handZoomSpeed = clamp(
+			Number.isFinite(this.settings.handZoomSpeed) ? this.settings.handZoomSpeed : 3,
+			1,
+			5,
+		);
 		// Presets and the toolbar color row are new in dev.38: seed them from the
 		// defaults once, then respect whatever the user keeps (including []).
 		const storedPresets = (stored as { brushPresets?: unknown } | null)?.brushPresets;
 		const seeded = storedPresets === undefined;
+		this.seededPresets = seeded;
 		const presets = (seeded ? DEFAULT_SETTINGS.brushPresets : storedPresets) as
 			| PdfInkSettings["brushPresets"]
 			| undefined;
@@ -382,12 +430,26 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		} catch {
 			gpu = "webgl-error";
 		}
-		const lines2 = `画布 ${width}x${height}（${(
-			(width * height) /
-			1000000
-		).toFixed(1)} Mpx）· 全页 clear ${clearFull}ms · 区域 clear ${clearBox}ms · 300 段逐段 ${seg300}ms · 300 段单路径 ${path300}ms · 区域 blit ${blit}ms · 逐帧(离屏) avg ${frameAvg}ms p95 ${frameP95}ms · 逐帧(叠加在 PDF 页上) avg ${inPage.avg}ms p95 ${inPage.p95}ms · ${gpu}`;
+		const lines2 = t(
+			"画布 {width}x{height}（{mpx} Mpx）· 全页 clear {clearFull}ms · 区域 clear {clearBox}ms · 300 段逐段 {seg300}ms · 300 段单路径 {path300}ms · 区域 blit {blit}ms · 逐帧(离屏) avg {frameAvg}ms p95 {frameP95}ms · 逐帧(叠加在 PDF 页上) avg {inPageAvg}ms p95 {inPageP95}ms · {gpu}",
+			{
+				width,
+				height,
+				mpx: ((width * height) / 1000000).toFixed(1),
+				clearFull,
+				clearBox,
+				seg300,
+				path300,
+				blit,
+				frameAvg,
+				frameP95,
+				inPageAvg: inPage.avg,
+				inPageP95: inPage.p95,
+				gpu,
+			},
+		);
 		this.log(`benchmark ${lines2}`);
-		new Notice(`[PDF Ink] ${lines2}`, 20000);
+		new Notice(`[Inkstone PDF] ${lines2}`, 20000);
 		void this.dumpDiagnostics("benchmark", true);
 	}
 
@@ -450,7 +512,7 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 	async runStutterAbTest(): Promise<void> {
 		const controller = this.getActiveController();
 		if (!controller) {
-			new Notice("[PDF Ink] 请先打开一个 PDF 文件");
+			new Notice(t("[Inkstone PDF] 请先打开一个 PDF 文件"));
 			return;
 		}
 		const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -463,12 +525,14 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 				}, ms);
 			});
 		const phases: Array<{ label: string; mode: "none" | "live" | "all" }> = [
-			{ label: "全部画布", mode: "none" },
-			{ label: "只隐藏 live", mode: "live" },
-			{ label: "隐藏全部", mode: "all" },
+			{ label: t("全部画布"), mode: "none" },
+			{ label: t("只隐藏 live"), mode: "live" },
+			{ label: t("隐藏全部"), mode: "all" },
 		];
 		new Notice(
-			`[PDF Ink] 归因测试：约 15 秒，全程别动笔、别滚动（当前 ${controller.canvasCount} 块画布）`,
+			t("[Inkstone PDF] 归因测试：约 15 秒，全程别动笔、别滚动（当前 {count} 块画布）", {
+				count: controller.canvasCount,
+			}),
 			8000,
 		);
 		const results: Array<{ label: string; count: number; total: number }> = [];
@@ -487,25 +551,31 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		controller.setInkHidden("none");
 
 		const byLabel = new Map(results.map((entry) => [entry.label, entry]));
-		const all = byLabel.get("全部画布")!;
-		const liveHidden = byLabel.get("只隐藏 live")!;
-		const noneHidden = byLabel.get("隐藏全部")!;
+		const all = byLabel.get(t("全部画布"))!;
+		const liveHidden = byLabel.get(t("只隐藏 live"))!;
+		const noneHidden = byLabel.get(t("隐藏全部"))!;
 		let verdict: string;
 		if (all.count === 0 && noneHidden.count === 0) {
-			verdict = "空闲时本来就不卡 → 卡顿在操作瞬间，查提交/擦除路径";
+			verdict = t("空闲时本来就不卡 → 卡顿在操作瞬间，查提交/擦除路径");
 		} else if (noneHidden.total < all.total * 0.5 && liveHidden.total < all.total * 0.7) {
-			verdict = "live 层是大头 → 直接绘制（去掉 live 层）";
+			verdict = t("live 层是大头 → 直接绘制（去掉 live 层）");
 		} else if (noneHidden.total < all.total * 0.5) {
-			verdict = "committed 层是大头 → 降预算或分块渲染";
+			verdict = t("committed 层是大头 → 降预算或分块渲染");
 		} else {
-			verdict = "隐藏画布没区别 → 阻塞来自外部（pdf.js / 其他插件），需要二分关插件";
+			verdict = t("隐藏画布没区别 → 阻塞来自外部（pdf.js / 其他插件），需要二分关插件");
 		}
 		const detail = results
-			.map((entry) => `${entry.label} ${entry.count} 次/${entry.total}ms`)
+			.map((entry) =>
+				t("{label} {count} 次/{total}ms", {
+					label: entry.label,
+					count: entry.count,
+					total: entry.total,
+				}),
+			)
 			.join(" · ");
-		const line = `归因: ${detail} · ${verdict}`;
+		const line = t("归因: {detail} · {verdict}", { detail, verdict });
 		this.log(`stutter-ab ${line}`);
-		new Notice(`[PDF Ink] ${line}`, 30000);
+		new Notice(`[Inkstone PDF] ${line}`, 30000);
 		void this.dumpDiagnostics("stutter-ab", true);
 	}
 
@@ -735,8 +805,15 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		const speed = Math.max(1, Math.min(10, this.settings.penAdjustSpeed)) * 0.12;
 		const dx = event.clientX - this.shiftAdjust.x;
 		const dy = event.clientY - this.shiftAdjust.y;
-		const size = clamp(this.shiftAdjust.size + dx * speed, 0.5, 64);
-		const opacity = clamp(this.shiftAdjust.opacity - dy * speed * 0.02, 0.05, 1);
+		// Per-axis dead zone: a wobble of a few pixels must not leak into the
+		// other axis, so each direction only starts counting past its own
+		// threshold. Beyond it the response stays linear, so slow deliberate
+		// movement still works.
+		const dead = BRUSH_ADJUST_DEAD_ZONE_PX;
+		const usableDx = Math.abs(dx) <= dead ? 0 : dx - Math.sign(dx) * dead;
+		const usableDy = Math.abs(dy) <= dead ? 0 : dy - Math.sign(dy) * dead;
+		const size = clamp(this.shiftAdjust.size + usableDx * speed, 0.5, 64);
+		const opacity = clamp(this.shiftAdjust.opacity - usableDy * speed * 0.02, 0.05, 1);
 		this.positionShiftHud(event.clientX, event.clientY, size, opacity);
 		if (this.shiftRaf) return;
 		this.shiftRaf = window.requestAnimationFrame(() => {
@@ -770,9 +847,10 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 	private positionShiftHud(x: number, y: number, size: number, opacity: number): void {
 		const hud = this.shiftHud;
 		if (!hud) return;
-		hud.textContent = `粗细 ${Math.round(size * 10) / 10}px · 不透明度 ${Math.round(
-			opacity * 100,
-		)}%`;
+		hud.textContent = t("粗细 {size}px · 不透明度 {opacity}%", {
+			size: Math.round(size * 10) / 10,
+			opacity: Math.round(opacity * 100),
+		});
 		// Next to the tip, but pushed out just enough to clear the brush ring so
 		// the cursor itself is never covered. Flips to the other side (and is
 		// clamped) near a viewport edge.
@@ -866,6 +944,10 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 	private runAction(actionId: string): void {
 		const action = ACTIONS.find((entry) => entry.id === actionId);
 		if (!action) return;
+		if (action.toggle) {
+			this.setTool(toggleToolTarget(this.tool, action.toggle));
+			return;
+		}
 		if (action.tool) {
 			this.setTool(action.tool);
 			return;
@@ -1117,6 +1199,10 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 			controllers: [...this.controllers.values()].map((controller) =>
 				controller.debugInfo(),
 			),
+			/** what the Shift-drag zoom can see in this build, for support */
+			zoomProbes: [...this.controllers.values()].map((controller) =>
+				controller.describeZoomCandidates(),
+			),
 			perf: perf.snapshot(),
 			log: this.logLines.slice(-150),
 		};
@@ -1235,6 +1321,30 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		for (const controller of this.controllers.values()) controller.refreshToolbar();
 	}
 
+	/**
+	 * Re-resolves the UI language from the settings (and Obsidian's own language
+	 * for "auto"). The settings tab re-renders itself; here we relabel the
+	 * commands and refresh the toolbars of open PDF views. Returns true when the
+	 * language actually changed.
+	 */
+	applyLanguage(): boolean {
+		const changed = setUiLanguage(this.settings.language, getLanguage());
+		if (!changed) return false;
+		for (const entry of this.localizedCommands) {
+			// The palette reads `name` when it opens, so mutating it is enough and
+			// keeps the command id (and therefore the user's hotkeys) untouched.
+			entry.command.name = t(entry.source);
+		}
+		this.refreshUI();
+		return true;
+	}
+
+	/** `addCommand` that remembers the source of the name for later relabelling. */
+	private registerCommand(source: string, command: Omit<Command, "name">): void {
+		const registered = this.addCommand({ ...command, name: t(source) } as Command);
+		this.localizedCommands.push({ command: registered, source });
+	}
+
 	/** Floating layers panel; also keeps the docked view available as a fallback. */
 	toggleLayersPanel(anchor: HTMLElement | null = null): void {
 		this.layersPopover ??= new PdfInkLayersPopover(this);
@@ -1256,11 +1366,11 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 	toggleDrawing(): void {
 		const controller = this.getActiveController() ?? this.getTargetController();
 		if (!controller) {
-			new Notice("[PDF Ink] 请先打开一个 PDF 文件");
+			new Notice(t("[Inkstone PDF] 请先打开一个 PDF 文件"));
 			return;
 		}
 		if (!controller.hasViewer) {
-			new Notice("[PDF Ink] PDF 正在加载，请稍后再试");
+			new Notice(t("[Inkstone PDF] PDF 正在加载，请稍后再试"));
 			return;
 		}
 		controller.toggleDrawing();
@@ -1352,9 +1462,8 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 	};
 
 	private registerCommands(): void {
-		this.addCommand({
+		this.registerCommand("开启/关闭绘制模式", {
 			id: "toggle-drawing",
-			name: "开启/关闭绘制模式",
 			checkCallback: (checking) => {
 				const controller = this.getActiveController();
 				if (!controller || !controller.hasViewer) return false;
@@ -1362,33 +1471,27 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 				return true;
 			},
 		});
-		const tools: Array<[string, string, ToolName]> = [
-			["tool-pen", "工具：钢笔", "pen"],
-			["tool-highlighter", "工具：荧光笔", "highlighter"],
-			["tool-eraser", "工具：橡皮", "eraser"],
-			["tool-select", "工具：选择", "select"],
-			["tool-line", "工具：直线", "line"],
-			["tool-arrow", "工具：箭头", "arrow"],
-			["tool-rect", "工具：矩形", "rect"],
-			["tool-ellipse", "工具：椭圆", "ellipse"],
-			["tool-hand", "工具：拖拽页面", "hand"],
-		];
-		for (const [id, name, tool] of tools) {
-			this.addCommand({ id, name, callback: () => this.setTool(tool) });
+		// One command per tool, derived from the action table so the names cannot
+		// drift from the key map. The id keeps its historical shape ("tool:pen" ->
+		// "tool-pen") so existing hotkeys stay bound.
+		for (const action of ACTIONS) {
+			if (!action.tool) continue;
+			const tool = action.tool;
+			this.registerCommand(action.name, {
+				id: action.id.replace(":", "-"),
+				callback: () => this.setTool(tool),
+			});
 		}
-		this.addCommand({
+		this.registerCommand("撤销笔迹", {
 			id: "undo-stroke",
-			name: "撤销笔迹",
 			callback: () => this.getTargetController()?.undo(),
 		});
-		this.addCommand({
+		this.registerCommand("重做笔迹", {
 			id: "redo-stroke",
-			name: "重做笔迹",
 			callback: () => this.getTargetController()?.redo(),
 		});
-		this.addCommand({
+		this.registerCommand("清空本 PDF 的全部墨迹（不可撤销）", {
 			id: "clear-all-ink",
-			name: "清空本 PDF 的全部墨迹（不可撤销）",
 			// Plain callback on purpose: a `checkCallback` that returns false is
 			// hidden from the palette, and while the palette itself is open the
 			// active leaf is not always the PDF view — the command then silently
@@ -1396,7 +1499,7 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 			callback: () => {
 				const controller = this.getActiveController() ?? this.getTargetController();
 				if (!controller?.doc) {
-					new Notice("[PDF Ink] 请先打开一个 PDF 文件并等它加载完");
+					new Notice(t("[Inkstone PDF] 请先打开一个 PDF 文件并等它加载完"));
 					return;
 				}
 				const strokes = controller.doc.layers.reduce(
@@ -1405,23 +1508,25 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 				);
 				new ConfirmModal(
 					this.app,
-					"清空墨迹",
-					`将从《${controller.doc.file ?? "当前 PDF"}》删除全部 ${strokes} 条笔迹（图层保留）。删除前会写一份 .bak 备份，删除后无法撤销。`,
-					"清空墨迹",
+					t("清空墨迹"),
+					t(
+						"将从《{file}》删除全部 {count} 条笔迹（图层保留）。删除前会写一份 .bak 备份，删除后无法撤销。",
+						{ file: controller.doc.file ?? t("当前 PDF"), count: strokes },
+					),
+					t("清空墨迹"),
 					() => {
 						const removed = controller.clearAllInk();
 						new Notice(
 							removed > 0
-								? `[PDF Ink] 已清空 ${removed} 条笔迹`
-								: "[PDF Ink] 没有可清空的笔迹",
+								? t("[Inkstone PDF] 已清空 {count} 条笔迹", { count: removed })
+								: t("[Inkstone PDF] 没有可清空的笔迹"),
 						);
 					},
 				).open();
 			},
 		});
-		this.addCommand({
+		this.registerCommand("重置笔迹会话（笔卡住时用）", {
 			id: "reset-input",
-			name: "重置笔迹会话（笔卡住时用）",
 			checkCallback: (checking) => {
 				const controller = this.getTargetController();
 				if (!controller) return false;
@@ -1433,61 +1538,55 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 					this.strokeGuardUntil = 0;
 					controller.resetInputState();
 					this.setTool("pen");
-					new Notice("[PDF Ink] 已重置：会话关闭、临时工具撤销、工具回到钢笔");
+					new Notice(t("[Inkstone PDF] 已重置：会话关闭、临时工具撤销、工具回到钢笔"));
 				}
 				return true;
 			},
 		});
-		this.addCommand({
+		this.registerCommand("新建图层", {
 			id: "new-layer",
-			name: "新建图层",
 			callback: () => {
 				const controller = this.getTargetController();
 				if (!controller?.doc) {
-					new Notice("[PDF Ink] 请先打开一个 PDF 文件");
+					new Notice(t("[Inkstone PDF] 请先打开一个 PDF 文件"));
 					return;
 				}
 				controller.addLayer();
 			},
 		});
-		this.addCommand({
+		this.registerCommand("打开图层面板", {
 			id: "open-layers",
-			name: "打开图层面板",
 			callback: () => this.toggleLayersPanel(this.getTargetController()?.toolbarEl ?? null),
 		});
-		this.addCommand({
+		this.registerCommand("导出诊断信息（调试用）", {
 			id: "export-diagnostics",
-			name: "导出诊断信息（调试用）",
 			callback: () => {
 				void this.dumpDiagnostics("manual", true).then(() => {
-					new Notice("[PDF Ink] 诊断信息已写入插件目录 debug.json");
+					new Notice(t("[Inkstone PDF] 诊断信息已写入插件目录 debug.json"));
 				});
 			},
 		});
-		this.addCommand({
+		this.registerCommand("显示性能摘要（调试用）", {
 			id: "perf-summary",
-			name: "显示性能摘要（调试用）",
 			callback: () => {
 				const lines = perf.summary(10);
 				if (lines.length === 0) {
-					new Notice("[PDF Ink] 还没有性能采样：先写几笔再试");
+					new Notice(t("[Inkstone PDF] 还没有性能采样：先写几笔再试"));
 					return;
 				}
 				const text = lines.join("\n");
 				void navigator.clipboard?.writeText(text).catch(() => undefined);
-				new Notice(`[PDF Ink] ${text}`, 15000);
+				new Notice(`[Inkstone PDF] ${text}`, 15000);
 			},
 		});
-		this.addCommand({
+		this.registerCommand("画布基准测试（排查卡顿用）", {
 			id: "canvas-benchmark",
-			name: "画布基准测试（排查卡顿用）",
 			callback: () => {
 				void this.runCanvasBenchmark();
 			},
 		});
-		this.addCommand({
+		this.registerCommand("卡顿归因测试（8 秒，A/B 画布）", {
 			id: "stutter-ab",
-			name: "卡顿归因测试（8 秒，A/B 画布）",
 			checkCallback: (checking) => {
 				const controller = this.getActiveController();
 				if (!controller) return false;
@@ -1495,12 +1594,11 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 				return true;
 			},
 		});
-		this.addCommand({
+		this.registerCommand("清空性能采样", {
 			id: "perf-reset",
-			name: "清空性能采样",
 			callback: () => {
 				perf.reset();
-				new Notice("[PDF Ink] 性能采样已清空");
+				new Notice(t("[Inkstone PDF] 性能采样已清空"));
 			},
 		});
 	}

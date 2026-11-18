@@ -265,6 +265,8 @@ const obsidianMock = {
 	Notice,
 	setIcon,
 	setTooltip,
+	// i18n resolves "auto" against the host language; the fixtures expect Chinese.
+	getLanguage: () => "zh",
 };
 
 const NodeModule = require("node:module");
@@ -1230,6 +1232,16 @@ test("1.1 pen tablet: rebindable keys and hold-to-erase", async () => {
 	press("p");
 	assert.equal(plugin.tool, "pen");
 
+	/* --- pen / hand toggle key (Q) --------------------------------------- */
+
+	press("q");
+	assert.equal(plugin.tool, "hand", "Q flips pen -> hand");
+	press("q");
+	assert.equal(plugin.tool, "pen", "Q flips hand -> pen");
+	press("e");
+	press("q");
+	assert.equal(plugin.tool, "pen", "from another tool Q falls back to the pen");
+
 	const paletteColor = plugin.settings.palette[0];
 	plugin.setColor("#ffffff");
 	press("1");
@@ -1448,6 +1460,25 @@ test("1.1 pen tablet: rebindable keys and hold-to-erase", async () => {
 		toolbarEl!.style.left,
 		leftAfterCancel,
 		"a cancelled drag must not leave the toolbar glued to the pen",
+	);
+
+	/* --- switching the UI language relabels the open toolbar ------------- */
+
+	const penButton = containerEl.querySelector<HTMLElement>('[data-tool="pen"]');
+	assert.ok(penButton, "pen button mounted");
+	plugin.settings.language = "en";
+	assert.equal(plugin.applyLanguage(), true, "switching to English is a change");
+	assert.match(
+		penButton!.getAttribute("aria-label") ?? "",
+		/^Pen \(P/,
+		"the pen tooltip followed the language switch",
+	);
+	plugin.settings.language = "zh";
+	assert.equal(plugin.applyLanguage(), true, "switching back is a change too");
+	assert.equal(
+		penButton!.getAttribute("aria-label"),
+		"钢笔 (P，双击/长按开面板)",
+		"the pen tooltip is Chinese again",
 	);
 
 	await plugin.onunload();

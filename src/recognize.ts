@@ -32,6 +32,15 @@ const DEFAULTS: RecognizeOptions = {
 	ellipseTolerance: 0.14,
 };
 
+/**
+ * Mean distance from the loop to its own bounding box border, relative to the
+ * shorter side: a box hugs its border (≈ 0), an ellipse only touches it at
+ * four tangents (≈ 0.05). This is what separates a box from an ellipse —
+ * the radial error alone cannot, because rounding a square's corners makes it
+ * *more* ellipse-like and used to turn drawn squares into ovals.
+ */
+const RECT_RESIDUAL = 0.03;
+
 export interface RecognizedShape {
 	kind: ShapeKind;
 	/** normalized x/y/pressure triples, ready to replace a stroke's points */
@@ -97,6 +106,27 @@ export function recognizeStroke(
 	if (widthPx < 6 || heightPx < 6) return null;
 
 	const ellipseError = meanEllipseError(loop, box);
+	const boxResidual = meanBoxResidual(loop, box);
+	const corners = simplify(loop, Math.max(2.5, opts.simplifyRatio * length));
+	const areaRatio = loopFillRatio(loop, box);
+
+	// Box first: the loop follows its own bounding border. The ellipse test
+	// runs after it because a square with rounded corners has a *lower*
+	// radial error than a crisp one, which is how it slipped under the
+	// ellipse tolerance and came out as an oval.
+	if (boxResidual <= RECT_RESIDUAL) {
+		return normalize(
+			[
+				{ x: box.minX, y: box.minY },
+				{ x: box.maxX, y: box.maxY },
+			],
+			pageWidth,
+			pageHeight,
+			"rect",
+			clamp01(1 - boxResidual * 10),
+		);
+	}
+
 	if (ellipseError <= opts.ellipseTolerance) {
 		return normalize(
 			[
@@ -110,12 +140,7 @@ export function recognizeStroke(
 		);
 	}
 
-	const corners = simplify(loop, Math.max(2.5, opts.simplifyRatio * length));
-	const areaRatio = loopFillRatio(loop, box);
-	if (
-		(corners.length === 4 && isAxisAligned(corners, opts.axisTolerance)) ||
-		(corners.length <= 8 && areaRatio >= 0.86)
-	) {
+	if (corners.length <= 8 && areaRatio >= 0.86) {
 		return normalize(
 			[
 				{ x: box.minX, y: box.minY },
@@ -204,8 +229,30 @@ function meanEllipseError(
 	return total / points.length;
 }
 
-/** How much of the bounding box the closed loop actually fills (1 = box). */
-function loopFillRatio(
+/**
+ * Mean distance from the loop to the border of its bounding box, relative to
+ * the shorter side. ~0 for anything that traces its own box (including a
+ * rounded square), ~0.05 for a circle.
+ */
+function meanBoxResidual(
+	points: Pt[],
+	box: { minX: number; minY: number; maxX: number; maxY: number },
+): number {
+	const shortSide = Math.min(box.maxX - box.minX, box.maxY - box.minY);
+	if (shortSide <= 1e-6) return 1;
+	let total = 0;
+	for (const point of points) {
+		total += Math.min(
+			point.x - box.minX,
+			box.maxX - point.x,
+			point.y - box.minY,
+			box.maxY - point.y,
+		);
+	}
+	return total / points.length / shortSide;
+}
+
+/** How much of the bounding box the closed loop actually fills (1 = box). */function loopFillRatio(
 	points: Pt[],
 	box: { minX: number; minY: number; maxX: number; maxY: number },
 ): number {
@@ -218,19 +265,6 @@ function loopFillRatio(
 		area += a.x * b.y - b.x * a.y;
 	}
 	return Math.min(1, Math.abs(area / 2) / boxArea);
-}
-
-function isAxisAligned(corners: Pt[], tolerance: number): boolean {
-	for (let i = 0; i < corners.length; i++) {
-		const a = corners[i];
-		const b = corners[(i + 1) % corners.length];
-		const dx = Math.abs(b.x - a.x);
-		const dy = Math.abs(b.y - a.y);
-		const length = Math.hypot(dx, dy);
-		if (length < 1e-6) return false;
-		if (Math.min(dx, dy) / length > tolerance) return false;
-	}
-	return true;
 }
 
 /** Ramer–Douglas–Peucker: keeps the vertices that matter for corners. */

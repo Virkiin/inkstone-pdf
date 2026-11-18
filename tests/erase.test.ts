@@ -198,3 +198,82 @@ test("an eraser that misses leaves the stroke untouched", () => {
 	assert.equal(strokes.length, 1);
 	assert.equal(strokes[0], thin);
 });
+
+test("whole stroke erase removes outline-only fragments", () => {
+	// What a partial ("涂抹") erase leaves behind: rings, no centre line.
+	const strokes: Stroke[] = [
+		{
+			id: "frag",
+			kind: "pen",
+			page: 1,
+			color: "#000",
+			width: 0.003,
+			opacity: 1,
+			points: [],
+			rings: [[0.2, 0.2, 0.4, 0.2, 0.4, 0.4, 0.2, 0.4]],
+			fill: true,
+		},
+	];
+	const changed = eraseInk(
+		strokes,
+		1,
+		{ kind: "rect", x0: 0.25 * W, y0: 0.25 * H, x1: 0.3 * W, y1: 0.3 * H },
+		"whole",
+		W,
+		H,
+		() => "s",
+	);
+	assert.equal(changed, 1, "the fragment is found");
+	assert.equal(strokes.length, 0, "and removed");
+});
+
+test("whole stroke erase can hit a region inside filled ink", () => {
+	const strokes: Stroke[] = [
+		{
+			id: "fill",
+			kind: "polygon",
+			page: 1,
+			color: "#000",
+			width: 0.003,
+			opacity: 1,
+			points: [],
+			rings: [[0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9]],
+			fill: true,
+		},
+	];
+	const changed = eraseInk(
+		strokes,
+		1,
+		{ kind: "rect", x0: 0.4 * W, y0: 0.4 * H, x1: 0.5 * W, y1: 0.5 * H },
+		"whole",
+		W,
+		H,
+		() => "s",
+	);
+	assert.equal(changed, 1, "a region inside a filled area still counts as a touch");
+});
+
+test("whole stroke erase leaves far away ink alone", () => {
+	const strokes: Stroke[] = [
+		{
+			id: "far",
+			kind: "pen",
+			page: 1,
+			color: "#000",
+			width: 0.003,
+			opacity: 1,
+			points: [0.85, 0.85, 0.5, 0.9, 0.9, 0.5],
+		},
+	];
+	const changed = eraseInk(
+		strokes,
+		1,
+		{ kind: "rect", x0: 0.05 * W, y0: 0.05 * H, x1: 0.15 * W, y1: 0.15 * H },
+		"whole",
+		W,
+		H,
+		() => "s",
+	);
+	assert.equal(changed, 0);
+	assert.equal(strokes.length, 1);
+});

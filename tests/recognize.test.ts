@@ -51,6 +51,46 @@ function rectPoints(count = 8): Array<[number, number]> {
 	return out;
 }
 
+function jitter(scale: number, seed = 7): (p: [number, number]) => [number, number] {
+	let state = seed;
+	const rand = (): number => {
+		state = (state * 1103515245 + 12345) & 0x7fffffff;
+		return state / 0x7fffffff - 0.5;
+	};
+	return ([x, y]) => [x + rand() * scale, y + rand() * scale];
+}
+
+/** A square with rounded corners — the shape that used to come out as an oval. */
+function roundedRectPoints(r = 45, perEdge = 10, perArc = 6): Array<[number, number]> {
+	// Clockwise: corner centre, arc start angle, arc end angle (screen y down).
+	const corners: Array<[number, number, number, number]> = [
+		[200, 300, Math.PI / 2, 0], // top-left
+		[500, 300, Math.PI, Math.PI / 2], // top-right
+		[500, 550, Math.PI * 1.5, Math.PI], // bottom-right
+		[200, 550, 0, -Math.PI / 2], // bottom-left
+	];
+	const at = (cx: number, cy: number, a: number): [number, number] => [
+		cx + Math.cos(a) * r,
+		cy + Math.sin(a) * r,
+	];
+	const out: Array<[number, number]> = [];
+	for (let i = 0; i < corners.length; i++) {
+		const [cx, cy, a0, a1] = corners[i];
+		for (let s = 0; s <= perArc; s++) {
+			out.push(at(cx, cy, a0 + (a1 - a0) * (s / perArc)));
+		}
+		const next = corners[(i + 1) % corners.length];
+		const from = at(cx, cy, a1);
+		const to = at(next[0], next[1], next[2]);
+		for (let s = 1; s < perEdge; s++) {
+			const t = s / perEdge;
+			out.push([from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t]);
+		}
+	}
+	out.push(out[0]);
+	return out;
+}
+
 test("recognizes a clean line", () => {
 	const result = recognizeStroke(path(linePoints(30, 0.4)), W, H);
 	assert.ok(result);
@@ -82,6 +122,25 @@ test("recognizes an axis-aligned box as a rect", () => {
 	const result = recognizeStroke(path(rectPoints()), W, H);
 	assert.ok(result);
 	assert.equal(result!.kind, "rect");
+});
+
+test("keeps a rounded-corner square a rect", () => {
+	const result = recognizeStroke(path(roundedRectPoints()), W, H);
+	assert.ok(result);
+	assert.equal(result!.kind, "rect");
+});
+
+test("keeps a hand-drawn wobbly square a rect", () => {
+	const noisy = rectPoints(6).map(jitter(5));
+	const result = recognizeStroke(path(noisy), W, H);
+	assert.ok(result);
+	assert.equal(result!.kind, "rect");
+});
+
+test("keeps a wide oval an ellipse, not a rect", () => {
+	const result = recognizeStroke(path(circlePoints(48, 160, 90)), W, H);
+	assert.ok(result);
+	assert.equal(result!.kind, "ellipse");
 });
 
 test("recognizes a triangle drawn as a loop as a polygon", () => {

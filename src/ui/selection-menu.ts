@@ -2,6 +2,7 @@ import { setIcon } from "obsidian";
 import type { PdfInkController } from "../controller";
 import type { Box } from "./place";
 import { clamp } from "../util";
+import { t } from "../i18n";
 
 /**
  * Small floating menu shown after tapping or long-pressing a stroke with the
@@ -41,10 +42,10 @@ export class SelectionMenu {
 		this.anchor = anchor ?? null;
 
 		const items: Array<[string, string, () => void]> = [
-			["copy", "复制", () => this.controller.copySelection()],
-			["scissors", "剪切", () => this.controller.cutSelection()],
-			["clipboard-paste", "粘贴", () => this.controller.pasteClipboard()],
-			["trash-2", "删除", () => this.controller.deleteSelection()],
+			["copy", t("复制"), () => this.controller.copySelection()],
+			["scissors", t("剪切"), () => this.controller.cutSelection()],
+			["clipboard-paste", t("粘贴"), () => this.controller.pasteClipboard()],
+			["trash-2", t("删除"), () => this.controller.deleteSelection()],
 		];
 		for (const [icon, label, action] of items) {
 			const row = this.doc.createElement("button");
@@ -66,14 +67,48 @@ export class SelectionMenu {
 			const needsSelection = icon !== "clipboard-paste";
 			if (needsSelection && !this.controller.hasSelection) {
 				row.disabled = true;
-				row.title = "先选中一条笔迹";
+				row.title = t("先选中一条笔迹");
 			}
 			if (icon === "clipboard-paste" && !this.controller.hasClipboard) {
 				row.disabled = true;
-				row.title = "剪贴板是空的：先复制或剪切笔迹";
+				row.title = t("剪贴板是空的：先复制或剪切笔迹");
 			}
 			el.appendChild(row);
 		}
+
+		// Mirror: one row, two halves — the axis is the only choice to make.
+		const mirrorable = this.controller.canMirrorSelection;
+		const mirrorRow = this.doc.createElement("div");
+		mirrorRow.className = "pdf-ink-selection-row";
+		const mirrors: Array<[string, string, boolean]> = [
+			["flip-horizontal-2", t("水平镜像"), true],
+			["flip-vertical-2", t("垂直镜像"), false],
+		];
+		for (const [icon, label, horizontal] of mirrors) {
+			const button = this.doc.createElement("button");
+			button.type = "button";
+			button.className = "pdf-ink-selection-item pdf-ink-selection-item-compact";
+			button.setAttribute("aria-label", label);
+			const iconEl = this.doc.createElement("span");
+			iconEl.className = "pdf-ink-selection-icon";
+			setIcon(iconEl, icon);
+			const text = this.doc.createElement("span");
+			text.textContent = label;
+			button.append(iconEl, text);
+			button.addEventListener("click", (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				if (button.disabled) return;
+				this.controller.mirrorSelection(horizontal);
+				this.close();
+			});
+			if (!mirrorable) {
+				button.disabled = true;
+				button.title = t("直线、箭头和多边形不能被镜像");
+			}
+			mirrorRow.appendChild(button);
+		}
+		el.appendChild(mirrorRow);
 
 		this.doc.body.appendChild(el);
 		const rect = el.getBoundingClientRect();

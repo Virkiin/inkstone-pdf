@@ -2,6 +2,7 @@ import { ItemView } from "obsidian";
 import type { WorkspaceLeaf } from "obsidian";
 import type PdfInkPlugin from "../main";
 import { renderLayersInto } from "./layers-content";
+import { t } from "../i18n";
 
 export const VIEW_TYPE_LAYERS = "pdf-ink-layers";
 
@@ -22,7 +23,7 @@ export class InkLayersView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return "PDF 墨迹图层";
+		return t("Inkstone PDF 图层");
 	}
 
 	getIcon(): string {
