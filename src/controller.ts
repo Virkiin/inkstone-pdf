@@ -2201,20 +2201,17 @@ export class PdfInkController {
 	}
 
 	/**
-	 * Zoom rate for a slider level, in "scale per pixel of vertical drag".
+	 * Zoom rate for a slider level, in "scale per pixel of sideways drag".
 	 *
-	 * Calibration (requested): new levels 1 → 4 cover what the old 1 → 10
-	 * covered, with the whole ramp dropped one notch so level 1 is slower than
-	 * the old level 1, level 2 lands on the old 1, and level 4 lands on the old
-	 * maximum. Levels 5 → 10 only ease a little further up.
+	 * The slider now runs 1 → 10 (it also drives how far a vertical Shift drag
+	 * scrolls). Level 1 is the old slowest, level 10 the old fastest, and the
+	 * level 5 default lands close to what the old level 3 felt like.
 	 */
 	private zoomRateFor(level: number): number {
-		// Five linear steps: level 1 is slower than the old minimum, level 5 is a
-		// little above the old maximum (about 1.09x and 3.4x per 300 px).
 		const slowest = 0.00029;
 		const strongest = 0.0041;
-		const clamped = Math.min(5, Math.max(1, level));
-		return slowest + ((strongest - slowest) * (clamped - 1)) / 4;
+		const clamped = Math.min(10, Math.max(1, level));
+		return slowest + ((strongest - slowest) * (clamped - 1)) / 9;
 	}
 
 	private beginHandZoom(event: PointerEvent): void {
@@ -2274,7 +2271,15 @@ export class PdfInkController {
 	}
 
 	/** Pixels a Shift+drag must travel before it commits to an axis. */
-	private static readonly GESTURE_AXIS_LOCK_PX = 6;
+	private static readonly GESTURE_AXIS_LOCK_PX = 18;
+
+	/** The winning axis must lead the other by this factor, or it keeps waiting. */
+	private static readonly GESTURE_AXIS_DOMINANCE = 1.25;
+
+	/** Vertical travel is amplified by the slider itself: 1x to 10x, 5x by default. */
+	private panGain(): number {
+		return clamp(this.plugin.settings.handZoomSpeed ?? 5, 1, 10);
+	}
 
 	private readonly onHandZoomMove = (event: PointerEvent): void => {
 		const zoom = this.handZoom;
@@ -2283,27 +2288,33 @@ export class PdfInkController {
 		const dx = event.clientX - zoom.startX;
 		const dy = event.clientY - zoom.startY;
 		if (zoom.axis === "none") {
-			if (Math.max(Math.abs(dx), Math.abs(dy)) < PdfInkController.GESTURE_AXIS_LOCK_PX) {
+			const across = Math.abs(dx);
+			const down = Math.abs(dy);
+			if (Math.max(across, down) < PdfInkController.GESTURE_AXIS_LOCK_PX) {
+				return;
+			}
+			// A slanted drag is not a decision: wait until one axis clearly leads.
+			if (across <= down * PdfInkController.GESTURE_AXIS_DOMINANCE && down <= across * PdfInkController.GESTURE_AXIS_DOMINANCE) {
 				return;
 			}
 			// One gesture, one mode: the first axis that wins keeps the whole drag.
 			// The press point stays the anchor, so the pixels spent deciding are not
 			// lost and the page never jumps when the mode kicks in.
-			zoom.axis = Math.abs(dx) >= Math.abs(dy) ? "zoom" : "pan";
+			zoom.axis = across > down ? "zoom" : "pan";
 			if (zoom.axis === "pan") {
 				this.containerEl.classList.remove("pdf-ink-zooming");
 				this.containerEl.classList.add("pdf-ink-panning");
 			}
-			this.plugin.log(`shift drag axis=${zoom.axis}`);
+			this.plugin.log(`shift drag axis=${zoom.axis} dx=${Math.round(dx)} dy=${Math.round(dy)}`);
 		}
 		if (zoom.axis === "pan") {
-			// Drag the page: pulling down reveals what is above.
-			zoom.scroller.scrollTop = zoom.startScrollTop - dy;
+			// Drag the page quickly: a short vertical drag covers many pages.
+			zoom.scroller.scrollTop = zoom.startScrollTop - dy * this.panGain();
 			return;
 		}
 		// Horizontal zoom: dragging right zooms in, left zooms out.
 		const travel = dx;
-		const speed = clamp(this.plugin.settings.handZoomSpeed ?? 3, 1, 5);
+		const speed = clamp(this.plugin.settings.handZoomSpeed ?? 5, 1, 10);
 
 		if (zoom.mode === "viewer") {
 			// Exponential, so one pixel of travel feels the same at 50% and 400 %.
@@ -2389,7 +2400,7 @@ export class PdfInkController {
 			if (Math.abs(ratio - 1) >= 0.005) {
 				this.commitZoom(zoom.target, [zoom.startClientX, zoom.startClientY]);
 				this.plugin.log(
-					`zoom drag ratio=${ratio.toFixed(3)} level=${clamp(this.plugin.settings.handZoomSpeed ?? 3, 1, 5)}`,
+					`zoom drag ratio=${ratio.toFixed(3)} level=${clamp(this.plugin.settings.handZoomSpeed ?? 5, 1, 10)}`,
 				);
 				window.setTimeout(() => {
 					this.plugin.log(`zoom end scale=${this.resolveScaleTarget()?.currentScale ?? "-"}`);

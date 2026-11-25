@@ -86,7 +86,7 @@ export interface PdfInkSettings {
 	/** fallback for tablet drivers that report the pen as a mouse */
 	mouseFreehand: boolean;
 	showToolbarAlways: boolean;
-	/** how fast Shift + vertical drag zooms the page with the hand tool (1–5) */
+	/** how fast Shift + drag zooms the page and how far a vertical drag scrolls (1–10) */
 	handZoomSpeed: number;
 	/** pen jitter filter: off / light / medium */
 	jitterFilter: JitterFilter;
@@ -161,7 +161,7 @@ export const DEFAULT_SETTINGS: PdfInkSettings = {
 	stylusFreehand: true,
 	mouseFreehand: false,
 	showToolbarAlways: true,
-	handZoomSpeed: 3,
+	handZoomSpeed: 5,
 	jitterFilter: "light",
 	toolbarLayout: "horizontal",
 	toolbarPos: null,
@@ -412,12 +412,12 @@ export class PdfInkSettingTab extends PluginSettingTab {
 			.setName(t("拖拽工具下 Shift 缩放 / 翻页的灵敏度"))
 			.setDesc(
 				t(
-					"在拖拽工具下按住 Shift 拖动：左右滑动缩放（向右放大、向左缩小），上下滑动直接拖动页面。一次拖动只会进入其中一种，按第一次移动的方向决定。数值越大，同样的左右拖动距离缩放得越多（1 最慢，5 最快）。",
+					"在拖拽工具下按住 Shift 拖动：左右滑动缩放（向右放大、向左缩小），上下滑动快速翻页。一次拖动只会进入其中一种：要移动超过 18 像素、且一个方向明显占优（1.25 倍）才决定。数值越大，缩放和上下翻页都越快：翻页倍数 = 这里的数值（默认 5 倍，最高 10 倍）。",
 				),
 			)
 			.addSlider((slider) =>
 				slider
-					.setLimits(1, 5, 1)
+					.setLimits(1, 10, 1)
 					.setValue(this.plugin.settings.handZoomSpeed)
 					.setDynamicTooltip()
 					.onChange(async (value) => {

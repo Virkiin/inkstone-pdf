@@ -157,8 +157,8 @@ export const EN: Record<string, string> = {
 	关: "Off",
 	轻: "Light",
 	中: "Medium",
-	"在拖拽工具下按住 Shift 拖动：左右滑动缩放（向右放大、向左缩小），上下滑动直接拖动页面。一次拖动只会进入其中一种，按第一次移动的方向决定。数值越大，同样的左右拖动距离缩放得越多（1 最慢，5 最快）。":
-		"With the hand tool, hold Shift and drag: sideways zooms (right zooms in, left zooms out), up and down pans the page directly. A single drag only does one of the two — the first direction that moves decides. Higher values zoom more for the same sideways distance (1 is the slowest, 5 the fastest).",
+	"在拖拽工具下按住 Shift 拖动：左右滑动缩放（向右放大、向左缩小），上下滑动快速翻页。一次拖动只会进入其中一种：要移动超过 18 像素、且一个方向明显占优（1.25 倍）才决定。数值越大，缩放和上下翻页都越快：翻页倍数 = 这里的数值（默认 5 倍，最高 10 倍）。":
+		"With the hand tool, hold Shift and drag: sideways zooms (right zooms in, left zooms out), up and down scrolls the page fast. A single drag only does one of the two: it decides after 18 px, once one direction clearly leads (1.25x). Higher values zoom and scroll faster; the pan multiplier is the slider value itself (5x by default, 10x at the top).",
 	键位映射: "Key bindings",
 	"只在 PDF 视图是当前面板、且焦点不在输入框时生效。数位板驱动或笔的侧键映射出来的键盘按键，直接填在这里。点输入框后按一个键即录制，Esc 清空。注意别把同一个键也绑到 Obsidian 自带快捷键上，否则会执行两次。":
 		"Only active while a PDF view is the focused pane and the focus is not in a text field. Keys your tablet driver or pen side button sends go straight here. Click a field and press a key to record it; Esc clears it. Do not bind the same key in Obsidian's own hotkeys as well, or the action runs twice.",

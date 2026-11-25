@@ -1957,7 +1957,7 @@ test("1.6 hand tool: a Shift drag locks to one axis", async () => {
 	window.dispatchEvent(
 		pointer("pointermove", 104, 140, { pointerType: "pen", shiftKey: true, buttons: 1 }),
 	);
-	assert.equal(scrollTop, 360, "dragging up scrolls the page down by the same distance");
+	assert.equal(scrollTop, 600, "dragging up scrolls the page down, amplified (default 5x)");
 	assert.equal(
 		controller.containerEl.classList.contains("pdf-ink-panning"),
 		true,
@@ -1970,19 +1970,40 @@ test("1.6 hand tool: a Shift drag locks to one axis", async () => {
 	);
 	window.dispatchEvent(pointer("pointerup", 104, 140, { pointerType: "pen", shiftKey: true }));
 
+	/* --- a shy or slanted move is not a decision ------------------------- */
+
+	scroller.scrollTop = 300;
+	live!.dispatchEvent(pointer("pointerdown", 100, 200, { pointerType: "pen", shiftKey: true }));
+	// 8 px each way: under the lock threshold, so the gesture is still undecided.
+	window.dispatchEvent(
+		pointer("pointermove", 108, 208, { pointerType: "pen", shiftKey: true, buttons: 1 }),
+	);
+	assert.equal(scrollTop, 300, "a short move changes nothing");
+	// 20 px across vs 18 px down: neither leads by 1.25x, so it keeps waiting.
+	window.dispatchEvent(
+		pointer("pointermove", 120, 218, { pointerType: "pen", shiftKey: true, buttons: 1 }),
+	);
+	assert.equal(scrollTop, 300, "a slanted move does not commit to panning");
+	assert.equal(
+		controller.containerEl.classList.contains("pdf-ink-panning"),
+		false,
+		"and the pan mode never starts",
+	);
+	window.dispatchEvent(pointer("pointerup", 120, 218, { pointerType: "pen", shiftKey: true }));
+
 	/* --- the axis stays locked once chosen ------------------------------- */
 
 	scroller.scrollTop = 300;
 	live!.dispatchEvent(pointer("pointerdown", 100, 200, { pointerType: "pen", shiftKey: true }));
-	// Decide "pan" with a small downward move, then travel mostly sideways.
+	// Decide "pan" with a clear downward move, then travel mostly sideways.
 	window.dispatchEvent(
 		pointer("pointermove", 102, 230, { pointerType: "pen", shiftKey: true, buttons: 1 }),
 	);
-	assert.equal(scrollTop, 270, "the move that picks the axis already pans");
+	assert.equal(scrollTop, 150, "the move that picks the axis already pans");
 	window.dispatchEvent(
 		pointer("pointermove", 260, 240, { pointerType: "pen", shiftKey: true, buttons: 1 }),
 	);
-	assert.equal(scrollTop, 260, "the drag stays a pan even when it turns sideways");
+	assert.equal(scrollTop, 100, "the drag stays a pan even when it turns sideways");
 	assert.equal(
 		controller.containerEl.classList.contains("pdf-ink-zooming"),
 		false,

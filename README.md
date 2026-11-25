@@ -80,7 +80,7 @@ folded in as feedback arrives.
   annotation surface (toolbar up, ink writable); dark means it is a plain PDF reader — no ink is
   written, moved or erased and no shortcut is taken, while the ink already on the page stays visible.
   Each tab remembers its own state.
-- **Hand tool.** `G` pans the page; hold `Shift` and drag sideways to zoom (five speeds), up/down to pan the page faster. One drag does only one of the two — the first direction that moves decides.
+- **Hand tool.** `G` pans the page; hold `Shift` and drag sideways to zoom (ten speeds), up/down scrolls the page fast (5x by default, up to 10x). One drag does only one of the two — the first direction that moves decides.
 
 **Keys, colours, data**
 
@@ -276,7 +276,7 @@ MIT — see [LICENSE](LICENSE). Bundled dependencies and their notices:
 - **文档级图层**：不同图层之间的笔迹互不影响；可以在一个图层批注、另一个图层写答案，也能隐藏一层自测。图层在侧边栏面板、工具栏弹层和命令面板里都能操作。
 - **浮动工具栏**：工具、常用色、撤销/重做、图层、布局切换，可收起、可拖动，横向 / 纵向 / 方形三种布局。
 - **按标签页的开关（0.1.4）**：PDF 顶部栏有一个铅笔按钮。亮＝这个标签页是批注面（工具栏显示、可以落笔）；灭＝回到普通 PDF 阅读器（不落笔、不移动或擦除笔迹、不抢快捷键），但**已经画好的批注照样显示**。每个标签页各记各的。
-- **拖拽工具**：`G` 平移页面；按住 `Shift` 左右拖动缩放（五档速度），上下拖动快速翻动页面。一次拖动只会进入其中一种，按第一次移动的方向决定。
+- **拖拽工具**：`G` 平移页面；按住 `Shift` 左右拖动缩放（十档速度），上下拖动快速翻页（默认 5 倍，最高 10 倍）。一次拖动只会进入其中一种，按第一次移动的方向决定。
 
 **键位、颜色、数据**
 

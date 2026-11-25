@@ -1,11 +1,21 @@
 # Changelog
 
+## 0.1.5
+
+拖拽工具下的 Shift 手势按实际使用手感重做：方向判断更稳，上下拖动可以快速翻页。
+
+- 方向判定：要移动超过 18 像素、且一个方向比另一个方向明显占优（1.25 倍）才锁定，斜着拖不会误判成缩放；锁定后整段拖动都保持同一模式。
+- 上下拖动改为"快速翻页"：位移按灵敏度放大，默认 5 倍、最高 10 倍（原来与普通拖拽完全相同，等于没效果）。
+- 灵敏度滑块从 1–5 档扩到 1–10 档，默认 5；这一档同时决定缩放速度与翻页倍数。
+
+English: the Shift gesture on the hand tool is rebuilt around how it actually feels. A drag commits to an axis only after 18 px and only when one direction clearly leads the other (1.25x), so a slanted drag no longer turns into a zoom, and the chosen axis stays for the whole gesture. Up/down dragging now really scrolls fast: the travel is multiplied by the sensitivity setting — 5x by default, up to 10x — where before it was identical to a normal drag. The slider itself grew from five steps to ten, defaulting to five.
+
 ## 0.1.4
 
 顶部栏开关、Shift 拖动手势、分屏修复与一批稳定性改动。
 
 - 新增 PDF 顶部栏开关：每个 PDF 标签页的顶部栏多一个铅笔按钮。亮＝显示工具栏、正常批注；灭＝这个标签页回到普通 PDF 阅读器（不落笔、不改笔迹、不吃快捷键、工具栏收起），已经画好的批注仍然显示
-- 拖拽工具手势调整：按住 `Shift` 左右拖动是缩放（向右放大、向左缩小），上下拖动直接快速翻动页面；一次拖动只会进入其中一种，按第一次移动的方向决定
+- 拖拽工具手势调整：按住 `Shift` 左右拖动是缩放（向右放大、向左缩小），上下拖动快速翻页（默认约为普通拖动的 3 倍）；一次拖动只会进入其中一种，按第一次移动的方向决定
 - 分屏修复：同时打开 PDF 和笔记时，点 PDF、在 PDF 上落笔不再把焦点和按键丢给旁边的笔记
 - 笔模式（以及荧光笔、橡皮）下轻点 / 双击不再选中笔迹：轻点按正常落笔处理，画出一个点；选中笔迹请切到选择工具（选择工具里双击 / 长按弹菜单的行为不变）
 - 关掉批注开关后光标立即恢复默认，笔刷圈与橡皮圆盘不再冒出来
