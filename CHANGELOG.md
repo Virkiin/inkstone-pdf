@@ -2,16 +2,18 @@
 
 ## 0.1.4
 
-顶部栏开关、分屏修复与一批稳定性改动。
+顶部栏开关、Shift 拖动手势、分屏修复与一批稳定性改动。
 
 - 新增 PDF 顶部栏开关：每个 PDF 标签页的顶部栏多一个铅笔按钮。亮＝显示工具栏、正常批注；灭＝这个标签页回到普通 PDF 阅读器（不落笔、不改笔迹、不吃快捷键、工具栏收起），已经画好的批注仍然显示
+- 拖拽工具手势调整：按住 `Shift` 左右拖动是缩放（向右放大、向左缩小），上下拖动直接快速翻动页面；一次拖动只会进入其中一种，按第一次移动的方向决定
 - 分屏修复：同时打开 PDF 和笔记时，点 PDF、在 PDF 上落笔不再把焦点和按键丢给旁边的笔记
 - 笔模式（以及荧光笔、橡皮）下轻点 / 双击不再选中笔迹：轻点按正常落笔处理，画出一个点；选中笔迹请切到选择工具（选择工具里双击 / 长按弹菜单的行为不变）
 - 关掉批注开关后光标立即恢复默认，笔刷圈与橡皮圆盘不再冒出来
 - 修复重启后自动恢复的后台 PDF 标签页没有顶部按钮、也不加载批注的问题
 - 启动更轻：布局事件先合并再扫描，减少开机时对上百页文档的重复遍历
+- 修正声明的 Obsidian 最低版本：代码用到 1.8.7 才有的 `getLanguage()`，而 manifest 原写 1.8.0，社区插件的自动检查报 `obsidianmd/no-unsupported-api` 未通过；现改为 1.8.7
 
-English: a per-tab switch in the PDF view header (on = toolbar and annotation; off = a plain reader, with the ink already on the page still visible); split-view fix so clicks and keystrokes on the PDF are no longer stolen by the note next to it; a tap in pen mode now makes a dot instead of selecting a stroke; the pointer returns to normal as soon as the switch is off; PDF tabs restored in the background keep their button and load their ink; lighter startup, because layout events are coalesced before scanning the open PDFs.
+English: a per-tab switch in the PDF view header (on = toolbar and annotation; off = a plain reader, with the ink already on the page still visible); in the hand tool, `Shift` + sideways drag zooms (right in, left out) and `Shift` + up/down drag pans the page quickly, and a single drag only ever does one of the two — the first direction that moves decides; split-view fix so clicks and keystrokes on the PDF are no longer stolen by the note next to it; a tap in pen mode now makes a dot instead of selecting a stroke; the pointer returns to normal as soon as the switch is off; PDF tabs restored in the background keep their button and load their ink; lighter startup, because layout events are coalesced before scanning the open PDFs; the declared minimum Obsidian version is now 1.8.7, because the plugin calls `getLanguage()`, which the automated review flagged as newer than the old 1.8.0 declaration.
 
 ## 0.1.3
 

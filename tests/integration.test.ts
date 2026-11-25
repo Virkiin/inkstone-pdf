@@ -1867,6 +1867,131 @@ test("1.5 restored PDF tabs: a background tab keeps its controller and button", 
 	await plugin.onunload();
 });
 
+/**
+ * Hand tool + Shift is one gesture with two meanings: sideways zooms, up/down
+ * pans. The axis is picked from the first few pixels and then locked, so a
+ * slightly crooked drag cannot zoom and scroll at the same time.
+ */
+test("1.6 hand tool: a Shift drag locks to one axis", async () => {
+	const adapter = new FakeAdapter();
+	const workspace = new FakeWorkspace();
+	const app = { workspace, vault: { adapter, on: () => ({}) } };
+
+	const containerEl = window.document.createElement("div");
+	containerEl.className = "view-content";
+	window.document.body.appendChild(containerEl);
+	const pdfContainer = window.document.createElement("div");
+	pdfContainer.className = "pdf-container";
+	containerEl.appendChild(pdfContainer);
+	const scroller = window.document.createElement("div");
+	scroller.className = "pdf-viewer-container";
+	pdfContainer.appendChild(scroller);
+	const viewerEl = window.document.createElement("div");
+	viewerEl.className = "pdfViewer";
+	scroller.appendChild(viewerEl);
+	const pageEl = window.document.createElement("div");
+	pageEl.className = "page";
+	pageEl.dataset.pageNumber = "1";
+	const wrapper = window.document.createElement("div");
+	wrapper.className = "canvasWrapper";
+	wrapper.appendChild(window.document.createElement("canvas"));
+	pageEl.appendChild(wrapper);
+	viewerEl.appendChild(pageEl);
+
+	// jsdom has no layout, so scrollTop is stubbed to whatever the code writes.
+	let scrollTop = 300;
+	Object.defineProperty(scroller, "scrollTop", {
+		configurable: true,
+		get: () => scrollTop,
+		set: (value: number) => {
+			scrollTop = value;
+		},
+	});
+
+	const file = { path: "资料/手势.pdf", extension: "pdf", basename: "手势" };
+	const view = { getViewType: () => "pdf", containerEl, file };
+	const leaf: any = { view };
+	workspace.leaves.push(leaf);
+	workspace.activeLeaf = leaf;
+
+	const { default: PdfInkPlugin } = require(findBuiltPlugin());
+	const plugin: any = new (PdfInkPlugin as any)();
+	plugin.app = app;
+	await plugin.onload();
+	await waitFor(() => Boolean(plugin.controllers.get(leaf)));
+	const controller = plugin.controllers.get(leaf);
+	assert.ok(controller, "controller attaches");
+
+	plugin.setTool("pen");
+	controller.setDrawing(true);
+	const live = pageEl.querySelector<HTMLElement>(".pdf-ink-canvas-live");
+	assert.ok(live, "live canvas mounted");
+
+	// One stroke, so the tab has a document and a layer to work on.
+	live!.dispatchEvent(pointer("pointerdown", 300, 300, { pointerType: "pen", pressure: 0.5 }));
+	window.dispatchEvent(pointer("pointermove", 320, 300, { pointerType: "pen", pressure: 0.5 }));
+	window.dispatchEvent(pointer("pointerup", 320, 300, { pointerType: "pen", pressure: 0 }));
+	await wait(20);
+	assert.ok(controller.doc !== null, "document ready");
+	plugin.setTool("hand");
+
+	/* --- sideways: zoom, and the page must not move ---------------------- */
+
+	scroller.scrollTop = 300;
+	live!.dispatchEvent(pointer("pointerdown", 100, 200, { pointerType: "pen", shiftKey: true }));
+	window.dispatchEvent(
+		pointer("pointermove", 170, 204, { pointerType: "pen", shiftKey: true, buttons: 1 }),
+	);
+	assert.equal(scrollTop, 300, "a sideways drag never pans");
+	assert.equal(
+		controller.containerEl.classList.contains("pdf-ink-zooming"),
+		true,
+		"and it is a zoom",
+	);
+	window.dispatchEvent(pointer("pointerup", 170, 204, { pointerType: "pen", shiftKey: true }));
+
+	/* --- up/down: pan, and it must not zoom ------------------------------ */
+
+	scroller.scrollTop = 300;
+	live!.dispatchEvent(pointer("pointerdown", 100, 200, { pointerType: "pen", shiftKey: true }));
+	window.dispatchEvent(
+		pointer("pointermove", 104, 140, { pointerType: "pen", shiftKey: true, buttons: 1 }),
+	);
+	assert.equal(scrollTop, 360, "dragging up scrolls the page down by the same distance");
+	assert.equal(
+		controller.containerEl.classList.contains("pdf-ink-panning"),
+		true,
+		"and it is a pan",
+	);
+	assert.equal(
+		controller.containerEl.classList.contains("pdf-ink-zooming"),
+		false,
+		"the zoom mode was dropped for this gesture",
+	);
+	window.dispatchEvent(pointer("pointerup", 104, 140, { pointerType: "pen", shiftKey: true }));
+
+	/* --- the axis stays locked once chosen ------------------------------- */
+
+	scroller.scrollTop = 300;
+	live!.dispatchEvent(pointer("pointerdown", 100, 200, { pointerType: "pen", shiftKey: true }));
+	// Decide "pan" with a small downward move, then travel mostly sideways.
+	window.dispatchEvent(
+		pointer("pointermove", 102, 230, { pointerType: "pen", shiftKey: true, buttons: 1 }),
+	);
+	assert.equal(scrollTop, 270, "the move that picks the axis already pans");
+	window.dispatchEvent(
+		pointer("pointermove", 260, 240, { pointerType: "pen", shiftKey: true, buttons: 1 }),
+	);
+	assert.equal(scrollTop, 260, "the drag stays a pan even when it turns sideways");
+	assert.equal(
+		controller.containerEl.classList.contains("pdf-ink-zooming"),
+		false,
+		"and never becomes a zoom",
+	);
+	window.dispatchEvent(pointer("pointerup", 260, 240, { pointerType: "pen", shiftKey: true }));
+
+	await plugin.onunload();
+});
 
 test("1.4 header button: a PDF tab without a viewer still gets the button", async () => {
 	const adapter = new FakeAdapter();

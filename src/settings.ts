@@ -409,10 +409,10 @@ export class PdfInkSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName(t("拖拽工具下 Shift 缩放的灵敏度"))
+			.setName(t("拖拽工具下 Shift 缩放 / 翻页的灵敏度"))
 			.setDesc(
 				t(
-					"在拖拽工具下按住 Shift 上下拖动：向上放大、向下缩小。数值越大，同样的拖动距离缩放得越多（1 最慢，5 最快）。",
+					"在拖拽工具下按住 Shift 拖动：左右滑动缩放（向右放大、向左缩小），上下滑动直接拖动页面。一次拖动只会进入其中一种，按第一次移动的方向决定。数值越大，同样的左右拖动距离缩放得越多（1 最慢，5 最快）。",
 				),
 			)
 			.addSlider((slider) =>

@@ -86,10 +86,12 @@
 	cursor: grabbing;
 }
 
-/* Hand tool + Shift: the vertical drag is a zoom slider, so say so. */
+/* Hand tool + Shift: horizontal drag zooms, vertical drag pans the page. The
+   cursor says "sideways" until the first movement picks the axis; a pan drag
+   then switches to .pdf-ink-panning (grabbing). */
 .pdf-ink-host.pdf-ink-tool-hand.pdf-ink-zooming .pdf-container .page,
 .pdf-ink-host.pdf-ink-tool-hand.pdf-ink-zooming .pdf-container .page * {
-	cursor: ns-resize;
+	cursor: ew-resize;
 }
 
 .pdf-ink-host.pdf-ink-cursor-point:not(.pdf-ink-alt) .pdf-container .page,

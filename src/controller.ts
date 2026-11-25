@@ -352,6 +352,16 @@ export class PdfInkController {
 	private handZoom: {
 		pointerId: number;
 		startY: number;
+		/** press point when the gesture began, to pick the axis */
+		startX: number;
+		/**
+		 * Which gesture this drag became. Resolved once, from the first few
+		 * pixels: horizontal means zoom, vertical means pan. A drag never
+		 * switches mode midway.
+		 */
+		axis: "none" | "zoom" | "pan";
+		/** scroll position at press time, for the pan mode */
+		startScrollTop: number;
 		/** "viewer" previews with a CSS transform and commits once on release */
 		mode: "viewer" | "wheel";
 		startScale: number;
@@ -2234,6 +2244,9 @@ export class PdfInkController {
 		this.handZoom = {
 			pointerId: event.pointerId,
 			startY: event.clientY,
+			startX: event.clientX,
+			axis: "none",
+			startScrollTop: scroller.scrollTop,
 			mode,
 			startScale,
 			target: startScale,
@@ -2260,17 +2273,42 @@ export class PdfInkController {
 		window.addEventListener("pointercancel", this.onHandZoomEnd, true);
 	}
 
+	/** Pixels a Shift+drag must travel before it commits to an axis. */
+	private static readonly GESTURE_AXIS_LOCK_PX = 6;
+
 	private readonly onHandZoomMove = (event: PointerEvent): void => {
 		const zoom = this.handZoom;
 		if (!zoom || event.pointerId !== zoom.pointerId) return;
 		event.preventDefault();
-		const dy = zoom.startY - event.clientY; // dragging up zooms in
+		const dx = event.clientX - zoom.startX;
+		const dy = event.clientY - zoom.startY;
+		if (zoom.axis === "none") {
+			if (Math.max(Math.abs(dx), Math.abs(dy)) < PdfInkController.GESTURE_AXIS_LOCK_PX) {
+				return;
+			}
+			// One gesture, one mode: the first axis that wins keeps the whole drag.
+			// The press point stays the anchor, so the pixels spent deciding are not
+			// lost and the page never jumps when the mode kicks in.
+			zoom.axis = Math.abs(dx) >= Math.abs(dy) ? "zoom" : "pan";
+			if (zoom.axis === "pan") {
+				this.containerEl.classList.remove("pdf-ink-zooming");
+				this.containerEl.classList.add("pdf-ink-panning");
+			}
+			this.plugin.log(`shift drag axis=${zoom.axis}`);
+		}
+		if (zoom.axis === "pan") {
+			// Drag the page: pulling down reveals what is above.
+			zoom.scroller.scrollTop = zoom.startScrollTop - dy;
+			return;
+		}
+		// Horizontal zoom: dragging right zooms in, left zooms out.
+		const travel = dx;
 		const speed = clamp(this.plugin.settings.handZoomSpeed ?? 3, 1, 5);
 
 		if (zoom.mode === "viewer") {
 			// Exponential, so one pixel of travel feels the same at 50% and 400 %.
 			const perPixel = this.zoomRateFor(speed);
-			const target = clamp(zoom.startScale * Math.exp(dy * perPixel), 0.1, 10);
+			const target = clamp(zoom.startScale * Math.exp(travel * perPixel), 0.1, 10);
 			zoom.target = target;
 			// Visual preview only: the engine quantises real scales to 1 %, so
 			// committing per frame would either not move or jump a whole percent.
@@ -2292,7 +2330,7 @@ export class PdfInkController {
 			return;
 		}
 
-		this.replayWheelZoom(zoom, event, dy, speed);
+		this.replayWheelZoom(zoom, event, travel, speed);
 	};
 
 	/**
@@ -2332,9 +2370,17 @@ export class PdfInkController {
 		if (!zoom || event.pointerId !== zoom.pointerId) return;
 		this.handZoom = null;
 		this.containerEl.classList.remove("pdf-ink-zooming");
+		this.containerEl.classList.remove("pdf-ink-panning");
 		window.removeEventListener("pointermove", this.onHandZoomMove, true);
 		window.removeEventListener("pointerup", this.onHandZoomEnd, true);
 		window.removeEventListener("pointercancel", this.onHandZoomEnd, true);
+		if (zoom.axis !== "zoom") {
+			// A pan drag has nothing to commit, and the preview was never moved.
+			if (zoom.previewEl) {
+				zoom.previewEl.setCssStyles({ transform: "", transformOrigin: "" });
+			}
+			return;
+		}
 		if (zoom.previewEl) {
 			// Drop the preview, then apply the real scale once: the engine
 			// quantises to 1 %, which is invisible after a continuous preview.

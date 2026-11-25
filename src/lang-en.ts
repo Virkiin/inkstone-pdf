@@ -150,15 +150,15 @@ export const EN: Record<string, string> = {
 	工具栏布局: "Toolbar layout",
 	"横向适合宽屏；纵向适合靠边竖排；方形会紧凑换行，适合小窗口。":
 		"Horizontal suits wide screens, vertical suits a narrow edge, and square wraps compactly for small windows.",
-	"拖拽工具下 Shift 缩放的灵敏度": "Sensitivity of Shift-drag zoom with the hand tool",
+	"拖拽工具下 Shift 缩放 / 翻页的灵敏度": "Sensitivity of Shift-drag zoom / pan with the hand tool",
 	输入抖动修正: "Input smoothing",
 	"对笔迹做速度自适应平滑：慢速书写时抑制手抖，快速笔画几乎不过滤。代价是 0.5–2 帧延迟，「中」比「轻」更明显。":
 		"Speed-adaptive smoothing of the pen path: it suppresses hand tremor at slow speeds and barely touches fast strokes. It costs 0.5–2 frames of latency, and \"Medium\" is more noticeable than \"Light\".",
 	关: "Off",
 	轻: "Light",
 	中: "Medium",
-	"在拖拽工具下按住 Shift 上下拖动：向上放大、向下缩小。数值越大，同样的拖动距离缩放得越多（1 最慢，5 最快）。":
-		"With the hand tool, hold Shift and drag up or down: up zooms in, down zooms out. Higher values zoom more for the same distance (1 is the slowest, 5 the fastest).",
+	"在拖拽工具下按住 Shift 拖动：左右滑动缩放（向右放大、向左缩小），上下滑动直接拖动页面。一次拖动只会进入其中一种，按第一次移动的方向决定。数值越大，同样的左右拖动距离缩放得越多（1 最慢，5 最快）。":
+		"With the hand tool, hold Shift and drag: sideways zooms (right zooms in, left zooms out), up and down pans the page directly. A single drag only does one of the two — the first direction that moves decides. Higher values zoom more for the same sideways distance (1 is the slowest, 5 the fastest).",
 	键位映射: "Key bindings",
 	"只在 PDF 视图是当前面板、且焦点不在输入框时生效。数位板驱动或笔的侧键映射出来的键盘按键，直接填在这里。点输入框后按一个键即录制，Esc 清空。注意别把同一个键也绑到 Obsidian 自带快捷键上，否则会执行两次。":
 		"Only active while a PDF view is the focused pane and the focus is not in a text field. Keys your tablet driver or pen side button sends go straight here. Click a field and press a key to record it; Esc clears it. Do not bind the same key in Obsidian's own hotkeys as well, or the action runs twice.",

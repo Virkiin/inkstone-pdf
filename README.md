@@ -2,7 +2,7 @@
 
 [English](#english) | [中文](#中文说明)
 
-`inkstone-pdf` · desktop only · Obsidian 1.8.0+
+`inkstone-pdf` · desktop only · Obsidian 1.8.7+
 
 ## English
 
@@ -80,7 +80,7 @@ folded in as feedback arrives.
   annotation surface (toolbar up, ink writable); dark means it is a plain PDF reader — no ink is
   written, moved or erased and no shortcut is taken, while the ink already on the page stays visible.
   Each tab remembers its own state.
-- **Hand tool.** `G` pans the page, `Shift` + vertical drag zooms (five speeds).
+- **Hand tool.** `G` pans the page; hold `Shift` and drag sideways to zoom (five speeds), up/down to pan the page faster. One drag does only one of the two — the first direction that moves decides.
 
 **Keys, colours, data**
 
@@ -225,7 +225,7 @@ MIT — see [LICENSE](LICENSE). Bundled dependencies and their notices:
 
 ## 中文说明
 
-`inkstone-pdf` · 仅桌面端 · 需要 Obsidian 1.8.0 及以上
+`inkstone-pdf` · 仅桌面端 · 需要 Obsidian 1.8.7 及以上
 
 > **⚠️ 先行测试版（0.1.4）** —— 代码由 **DSH**（DeepSeek Harness）开发，测试、实测和问题反馈由我来做。目前还有不少问题没解决，但核心功能已经基本完成，现在最需要的就是真实使用中的反馈。
 >
@@ -276,7 +276,7 @@ MIT — see [LICENSE](LICENSE). Bundled dependencies and their notices:
 - **文档级图层**：不同图层之间的笔迹互不影响；可以在一个图层批注、另一个图层写答案，也能隐藏一层自测。图层在侧边栏面板、工具栏弹层和命令面板里都能操作。
 - **浮动工具栏**：工具、常用色、撤销/重做、图层、布局切换，可收起、可拖动，横向 / 纵向 / 方形三种布局。
 - **按标签页的开关（0.1.4）**：PDF 顶部栏有一个铅笔按钮。亮＝这个标签页是批注面（工具栏显示、可以落笔）；灭＝回到普通 PDF 阅读器（不落笔、不移动或擦除笔迹、不抢快捷键），但**已经画好的批注照样显示**。每个标签页各记各的。
-- **拖拽工具**：`G` 平移页面，`Shift` + 纵向拖动缩放（五档速度）。
+- **拖拽工具**：`G` 平移页面；按住 `Shift` 左右拖动缩放（五档速度），上下拖动快速翻动页面。一次拖动只会进入其中一种，按第一次移动的方向决定。
 
 **键位、颜色、数据**
 
@@ -318,7 +318,7 @@ MIT — see [LICENSE](LICENSE). Bundled dependencies and their notices:
 - **输入设备**：触屏平板 / 数位板。选数位板会关掉看不见的手势并启用侧键临时橡皮。
 - **墨迹清晰度 / 流畅度**：每页的像素预算。
 - **输入抖动修正**、**Shift + 悬停灵敏度**、**低延迟画布（实验）**、**关闭其他插件的毛玻璃背景**。
-- **始终显示工具栏**、**工具栏布局**、**拖拽工具下 Shift 缩放的灵敏度**。
+- **始终显示工具栏**、**工具栏布局**、**拖拽工具下 Shift 缩放 / 翻页的灵敏度**。
 - **键位映射**：每个动作，外加每个工具的「点按 / 按住」。
 - **钢笔、荧光笔、橡皮的默认值**：颜色、粗细、不透明度；橡皮的方式、区域与半径。
 - **手势**：按住时间、压力判定窗口、静止判定半径、擦除触发压力、擦头随压力变化。
