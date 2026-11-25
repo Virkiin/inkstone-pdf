@@ -529,6 +529,12 @@
 	color: var(--text-accent);
 }
 
+/* A switch that means nothing right now: the toolbar, while annotation is off. */
+.pdf-ink-mode-option.is-disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
 .pdf-ink-radio {
 	display: inline-flex;
 	align-items: center;
@@ -546,6 +552,42 @@
 	height: 7px;
 	border-radius: 50%;
 	background: currentColor;
+}
+
+/* --- header button (one per PDF tab, in the view's own header) ----------- */
+
+/* Obsidian's .clickable-icon supplies the size, hover and focus ring; this only
+   adds the on/off read-out. */
+.pdf-ink-header-btn {
+	position: relative;
+	color: var(--text-muted);
+}
+
+.pdf-ink-header-btn.is-active {
+	color: var(--text-accent);
+}
+
+/* A quiet dot, so "annotation is on" is readable without waiting for a tooltip. */
+.pdf-ink-header-btn.is-active::after {
+	content: "";
+	position: absolute;
+	right: 3px;
+	bottom: 3px;
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+/* The tick column of the header menu: keeps labels aligned when a row is off. */
+.pdf-ink-check {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 12px;
+	flex: 0 0 auto;
+	font-size: 12px;
+	line-height: 1;
 }
 
 /* Floating layers panel opened from the toolbar. */

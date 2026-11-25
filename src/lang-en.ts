@@ -145,6 +145,8 @@ export const EN: Record<string, string> = {
 	始终显示工具栏: "Always show the toolbar",
 	"关闭后，只有进入绘制模式或按 Ribbon 时才显示 PDF 右上角的工具栏。":
 		"When off, the toolbar in the top-right corner of the PDF only appears in drawing mode or when you press the ribbon icon.",
+	"批注：开（点击变成普通阅读）": "Annotations on — click for a plain reader",
+	"批注：关（点击开始批注）": "Annotations off — click to annotate",
 	工具栏布局: "Toolbar layout",
 	"横向适合宽屏；纵向适合靠边竖排；方形会紧凑换行，适合小窗口。":
 		"Horizontal suits wide screens, vertical suits a narrow edge, and square wraps compactly for small windows.",

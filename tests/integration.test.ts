@@ -322,6 +322,24 @@ class FakeBus {
 class FakeWorkspace {
 	activeLeaf: any = null;
 	leaves: any[] = [];
+	/** Every leaf handed to setActiveLeaf, in order. */
+	activated: any[] = [];
+	iterateAllLeaves(callback: (leaf: any) => void) {
+		for (const leaf of this.leaves) callback(leaf);
+	}
+	/**
+	 * Mirrors the real workspace closely enough for the split-layout tests: the
+	 * leaf becomes active *and* carries the `.mod-active` class, because the
+	 * plugin resolves the active view from that class.
+	 */
+	setActiveLeaf(leaf: any) {
+		for (const el of Array.from(window.document.querySelectorAll(".workspace-leaf.mod-active"))) {
+			el.classList.remove("mod-active");
+		}
+		(leaf.containerEl as HTMLElement | undefined)?.classList.add("mod-active");
+		this.activeLeaf = leaf;
+		this.activated.push(leaf);
+	}
 	on() {
 		return {};
 	}
@@ -469,6 +487,23 @@ test("1.0 end-to-end: draw, shape, erase, layers, undo, stylus", async () => {
 	assert.ok(Math.abs(pen.points[0] - 0.125) < 1e-6);
 	assert.ok(Math.abs(pen.points[1] - 0.2) < 1e-6);
 	assert.ok(pen.points.length >= 9);
+
+	/* --- a tap in pen mode draws a dot; it never selects ink -------------- */
+
+	const beforeTap = layer.strokes.length;
+	live!.dispatchEvent(pointer("pointerdown", 300, 400));
+	live!.dispatchEvent(pointer("pointerup", 300, 400));
+	await wait(20);
+	assert.equal(
+		layer.strokes.length,
+		beforeTap + 1,
+		"a pen tap commits a dot instead of swallowing the stroke",
+	);
+	assert.equal(controller.hasSelection, false, "a pen tap does not select ink");
+	assert.equal(layer.strokes[beforeTap].points.length, 3, "the dot is one point");
+	controller.undo();
+	await wait(10);
+	assert.equal(layer.strokes.length, beforeTap, "the dot is undoable");
 
 	/* --- shape ----------------------------------------------------------- */
 
@@ -1479,6 +1514,402 @@ test("1.1 pen tablet: rebindable keys and hold-to-erase", async () => {
 		penButton!.getAttribute("aria-label"),
 		"钢笔 (P，双击/长按开面板)",
 		"the pen tooltip is Chinese again",
+	);
+
+	await plugin.onunload();
+});
+
+/**
+ * Split layout: a note beside the PDF. A stroke has to start in the capture
+ * phase, and the `preventDefault()` that requires also hides the click from
+ * Obsidian, so the plugin has to activate the clicked leaf itself. Without that
+ * the note stayed the active, focused leaf: no PDF was "active", the key handler
+ * bailed out, and every tool shortcut was typed into the note.
+ */
+test("1.2 split layout: a stroke on the PDF takes the leaf and the focus", async () => {
+	const adapter = new FakeAdapter();
+	const workspace = new FakeWorkspace();
+	const app = { workspace, vault: { adapter, on: () => ({}) } };
+
+	/* --- the note: marked active, its editor holding the focus ----------- */
+
+	const noteLeafEl = window.document.createElement("div");
+	noteLeafEl.className = "workspace-leaf mod-active";
+	window.document.body.appendChild(noteLeafEl);
+	const noteContentEl = window.document.createElement("div");
+	noteContentEl.className = "view-content";
+	noteLeafEl.appendChild(noteContentEl);
+	const editor = window.document.createElement("div");
+	editor.setAttribute("contenteditable", "true");
+	editor.setAttribute("tabindex", "-1");
+	noteContentEl.appendChild(editor);
+	editor.focus();
+	assert.equal(window.document.activeElement, editor, "the note editor starts focused");
+
+	/* --- the PDF in the other pane --------------------------------------- */
+
+	const pdfLeafEl = window.document.createElement("div");
+	pdfLeafEl.className = "workspace-leaf";
+	window.document.body.appendChild(pdfLeafEl);
+	const containerEl = window.document.createElement("div");
+	containerEl.className = "view-content";
+	pdfLeafEl.appendChild(containerEl);
+	const pdfContainer = window.document.createElement("div");
+	pdfContainer.className = "pdf-container";
+	containerEl.appendChild(pdfContainer);
+	const scrollEl = window.document.createElement("div");
+	scrollEl.className = "pdf-viewer-container";
+	pdfContainer.appendChild(scrollEl);
+	const viewerEl = window.document.createElement("div");
+	viewerEl.className = "pdfViewer";
+	scrollEl.appendChild(viewerEl);
+	const pageEl = window.document.createElement("div");
+	pageEl.className = "page";
+	pageEl.dataset.pageNumber = "1";
+	const wrapper = window.document.createElement("div");
+	wrapper.className = "canvasWrapper";
+	wrapper.appendChild(window.document.createElement("canvas"));
+	pageEl.appendChild(wrapper);
+	viewerEl.appendChild(pageEl);
+
+	const file = { path: "资料/分屏.pdf", extension: "pdf", basename: "分屏" };
+	const view = { getViewType: () => "pdf", containerEl, file };
+	const leaf: any = { view, containerEl: pdfLeafEl };
+	const noteLeaf: any = {
+		view: { getViewType: () => "markdown", containerEl: noteContentEl },
+		containerEl: noteLeafEl,
+	};
+	workspace.leaves.push(noteLeaf, leaf);
+	workspace.activeLeaf = noteLeaf;
+
+	const { default: PdfInkPlugin } = require(findBuiltPlugin());
+	const plugin: any = new (PdfInkPlugin as any)();
+	plugin.app = app;
+	await plugin.onload();
+
+	await waitFor(() => Boolean(plugin.controllers.get(leaf)));
+	const controller = plugin.controllers.get(leaf);
+	assert.ok(controller, "the PDF leaf gets a controller");
+	await waitFor(() => !!controller.doc);
+	assert.equal(
+		plugin.getActiveController(),
+		null,
+		"no PDF counts as active while the note is",
+	);
+
+	/* --- one pen touch on the page --------------------------------------- */
+
+	pageEl.dispatchEvent(pointer("pointerdown", 120, 160, { pointerType: "pen" }));
+	assert.ok(workspace.activated.includes(leaf), "the click activates the PDF leaf");
+	assert.equal(workspace.activeLeaf, leaf, "the workspace agrees it is active");
+	assert.notEqual(
+		window.document.activeElement,
+		editor,
+		"the note editor loses the focus",
+	);
+	assert.equal(
+		plugin.getActiveController(),
+		controller,
+		"the PDF owns the shortcuts now",
+	);
+	pageEl.dispatchEvent(pointer("pointerup", 120, 160, { pointerType: "pen" }));
+	await wait(10);
+
+	/* --- and the shortcuts reach it -------------------------------------- */
+
+	plugin.setTool("pen");
+	window.document.dispatchEvent(new KeyboardEvent("keydown", { key: "e", bubbles: true }));
+	assert.equal(plugin.tool, "eraser", "E reaches the PDF instead of the note");
+
+	await plugin.onunload();
+});
+
+/**
+ * The header button: one per PDF tab, living in the view's own header. It is
+ * the only entry point that exists even when the floating toolbar is hidden,
+ * and it carries the two per-tab switches.
+ */
+test("1.3 header button: per-tab toolbar and annotation switches", async () => {
+	const adapter = new FakeAdapter();
+	const workspace = new FakeWorkspace();
+	const app = { workspace, vault: { adapter, on: () => ({}) } };
+
+	const leafEl = window.document.createElement("div");
+	leafEl.className = "workspace-leaf";
+	window.document.body.appendChild(leafEl);
+	const leafContentEl = window.document.createElement("div");
+	leafContentEl.className = "workspace-leaf-content";
+	leafEl.appendChild(leafContentEl);
+	const headerEl = window.document.createElement("div");
+	headerEl.className = "view-header";
+	leafContentEl.appendChild(headerEl);
+	const actionsEl = window.document.createElement("div");
+	actionsEl.className = "view-actions";
+	headerEl.appendChild(actionsEl);
+
+	const containerEl = window.document.createElement("div");
+	containerEl.className = "view-content";
+	leafContentEl.appendChild(containerEl);
+	const pdfContainer = window.document.createElement("div");
+	pdfContainer.className = "pdf-container";
+	containerEl.appendChild(pdfContainer);
+	const scrollEl = window.document.createElement("div");
+	scrollEl.className = "pdf-viewer-container";
+	pdfContainer.appendChild(scrollEl);
+	const viewerEl = window.document.createElement("div");
+	viewerEl.className = "pdfViewer";
+	scrollEl.appendChild(viewerEl);
+	const pageEl = window.document.createElement("div");
+	pageEl.className = "page";
+	pageEl.dataset.pageNumber = "1";
+	const wrapper = window.document.createElement("div");
+	wrapper.className = "canvasWrapper";
+	wrapper.appendChild(window.document.createElement("canvas"));
+	pageEl.appendChild(wrapper);
+	viewerEl.appendChild(pageEl);
+
+	const file = { path: "资料/头部按钮.pdf", extension: "pdf", basename: "头部按钮" };
+	const view = { getViewType: () => "pdf", containerEl, file };
+	const leaf: any = { view };
+	workspace.leaves.push(leaf);
+	workspace.activeLeaf = leaf;
+
+	const { default: PdfInkPlugin } = require(findBuiltPlugin());
+	const plugin: any = new (PdfInkPlugin as any)();
+	plugin.app = app;
+	await plugin.onload();
+
+	const controller = plugin.controllers.get(leaf);
+	assert.ok(controller, "controller attaches");
+	await waitFor(() => !!controller.doc);
+
+	/* --- the button is in the view header -------------------------------- */
+
+	const button = actionsEl.querySelector<HTMLElement>(".pdf-ink-header-btn");
+	assert.ok(button, "the header button is mounted into .view-actions");
+	assert.ok(controller.toolbar, "the floating toolbar starts visible");
+
+	/* --- the button is not rewritten when the tree changes --------------- */
+
+	// Mounting from inside the DOM observer used to rewrite the button's icon on
+	// every mutation, which re-entered the observer and froze the whole workspace.
+	let buttonWrites = 0;
+	const watcher = new window.MutationObserver(() => {
+		buttonWrites++;
+	});
+	watcher.observe(button!, { childList: true, subtree: true, attributes: true });
+	for (let i = 0; i < 5; i++) {
+		const probe = window.document.createElement("div");
+		leafContentEl.appendChild(probe);
+		probe.remove();
+		await wait(10);
+	}
+	await wait(40);
+	watcher.disconnect();
+	assert.equal(buttonWrites, 0, "the header button must not be rewritten on mutations");
+	assert.equal(
+		actionsEl.querySelectorAll(".pdf-ink-header-btn").length,
+		1,
+		"exactly one header button stays mounted",
+	);
+	assert.equal(
+		actionsEl.querySelector(".pdf-ink-header-btn"),
+		button,
+		"and it is the same element, not a re-created one",
+	);
+
+	/* --- one click turns this tab into a plain reader --------------------- */
+
+	const strokesNow = () =>
+		controller.doc.layers.reduce(
+			(sum: number, layer: any) => sum + layer.strokes.length,
+			0,
+		);
+	plugin.setTool("pen");
+	const strokesBefore = strokesNow();
+	const committed = pageEl.querySelector<HTMLElement>(".pdf-ink-canvas-committed");
+	assert.ok(committed, "ink canvases are mounted");
+
+	button!.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+	assert.equal(controller.annotationsOn, false, "the tab becomes a plain reader");
+	assert.equal(controller.toolbar, null, "the toolbar is gone");
+	assert.equal(containerEl.querySelector(".pdf-ink-toolbar"), null, "and its DOM with it");
+	assert.equal(
+		committed!.style.display,
+		"",
+		"the ink that is already on the page stays visible",
+	);
+	assert.equal(button!.classList.contains("is-active"), false, "the button goes dark");
+
+	// The pen cursor must be gone as well: hovering used to re-apply it.
+	pageEl.dispatchEvent(pointer("pointermove", 120, 160, {}));
+	await wait(10);
+	assert.equal(
+		controller.containerEl.classList.contains("pdf-ink-cursor-point"),
+		false,
+		"the pen cursor does not come back on hover",
+	);
+	assert.equal(
+		controller.containerEl.classList.contains("pdf-ink-cursor-ring"),
+		false,
+		"and neither does the brush ring",
+	);
+
+	pageEl.dispatchEvent(pointer("pointerdown", 120, 160, { pointerType: "pen" }));
+	pageEl.dispatchEvent(pointer("pointermove", 200, 200, { pointerType: "pen" }));
+	pageEl.dispatchEvent(pointer("pointerup", 200, 200, { pointerType: "pen" }));
+	await wait(10);
+	assert.equal(controller.isStroking, false, "no stroke may start");
+	assert.equal(strokesNow(), strokesBefore, "and nothing is written");
+	window.document.dispatchEvent(new KeyboardEvent("keydown", { key: "e", bubbles: true }));
+	assert.equal(plugin.tool, "pen", "tool keys are ignored while the tab is a reader");
+	assert.equal(
+		controller.containerEl.classList.contains("pdf-ink-pen-mode"),
+		false,
+		"the plain reader keeps no pen styling either",
+	);
+
+	/* --- one more click makes it an annotation surface again -------------- */
+
+	button!.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+	assert.equal(controller.annotationsOn, true);
+	assert.ok(controller.toolbar, "the toolbar returns");
+	assert.equal(button!.classList.contains("is-active"), true, "the button lights up");
+	pageEl.dispatchEvent(pointer("pointerdown", 120, 160, { pointerType: "pen" }));
+	assert.equal(controller.isStroking, true, "the pen works again");
+	pageEl.dispatchEvent(pointer("pointerup", 120, 160, { pointerType: "pen" }));
+	await wait(10);
+
+	await plugin.onunload();
+	assert.equal(
+		window.document.querySelector(".pdf-ink-header-btn"),
+		null,
+		"unloading removes the header button",
+	);
+});
+
+/**
+ * Restoring a few PDF tabs at startup: only the active tab is in the document,
+ * the others are restored detached. Those tabs used to lose their controller (in
+ * a detached tab the container is not connected) and therefore never got the
+ * header button — it appeared only after opening a brand new tab.
+ */
+test("1.5 restored PDF tabs: a background tab keeps its controller and button", async () => {
+	const adapter = new FakeAdapter();
+	const workspace = new FakeWorkspace();
+	const app = { workspace, vault: { adapter, on: () => ({}) } };
+
+	const buildPdfLeaf = (name: string, connected: boolean) => {
+		const leafEl = window.document.createElement("div");
+		leafEl.className = "workspace-leaf";
+		if (connected) window.document.body.appendChild(leafEl);
+		const content = window.document.createElement("div");
+		content.className = "workspace-leaf-content";
+		leafEl.appendChild(content);
+		const header = window.document.createElement("div");
+		header.className = "view-header";
+		content.appendChild(header);
+		const actions = window.document.createElement("div");
+		actions.className = "view-actions";
+		header.appendChild(actions);
+		const containerEl = window.document.createElement("div");
+		containerEl.className = "view-content";
+		content.appendChild(containerEl);
+		const pdfContainer = window.document.createElement("div");
+		pdfContainer.className = "pdf-container";
+		containerEl.appendChild(pdfContainer);
+		const viewer = window.document.createElement("div");
+		viewer.className = "pdfViewer";
+		pdfContainer.appendChild(viewer);
+		const page = window.document.createElement("div");
+		page.className = "page";
+		page.dataset.pageNumber = "1";
+		const wrapper = window.document.createElement("div");
+		wrapper.className = "canvasWrapper";
+		wrapper.appendChild(window.document.createElement("canvas"));
+		page.appendChild(wrapper);
+		viewer.appendChild(page);
+		const view = {
+			getViewType: () => "pdf",
+			containerEl,
+			file: { path: `资料/${name}.pdf`, extension: "pdf", basename: name },
+		};
+		return { leaf: { view } as any, actions };
+	};
+
+	const active = buildPdfLeaf("前台", true);
+	const background = buildPdfLeaf("后台", false);
+	workspace.leaves.push(active.leaf, background.leaf);
+	workspace.activeLeaf = active.leaf;
+
+	const { default: PdfInkPlugin } = require(findBuiltPlugin());
+	const plugin: any = new (PdfInkPlugin as any)();
+	plugin.app = app;
+	await plugin.onload();
+	await waitFor(() => Boolean(plugin.controllers.get(background.leaf)));
+
+	assert.ok(
+		plugin.controllers.get(background.leaf),
+		"the restored background tab keeps a controller",
+	);
+	const button = background.actions.querySelector(".pdf-ink-header-btn");
+	assert.ok(button, "and it gets its header button while still detached");
+
+	// A later scan must not tear the detached tab down and re-create the button.
+	plugin.scanLeaves();
+	await wait(40);
+	assert.equal(
+		background.actions.querySelector(".pdf-ink-header-btn"),
+		button,
+		"rescanning keeps the very same button",
+	);
+
+	await plugin.onunload();
+});
+
+
+test("1.4 header button: a PDF tab without a viewer still gets the button", async () => {
+	const adapter = new FakeAdapter();
+	const workspace = new FakeWorkspace();
+	const app = { workspace, vault: { adapter, on: () => ({}) } };
+
+	const leafEl = window.document.createElement("div");
+	leafEl.className = "workspace-leaf";
+	window.document.body.appendChild(leafEl);
+	const leafContentEl = window.document.createElement("div");
+	leafContentEl.className = "workspace-leaf-content";
+	leafEl.appendChild(leafContentEl);
+	const headerEl = window.document.createElement("div");
+	headerEl.className = "view-header";
+	leafContentEl.appendChild(headerEl);
+	const actionsEl = window.document.createElement("div");
+	actionsEl.className = "view-actions";
+	headerEl.appendChild(actionsEl);
+	// No .pdfViewer anywhere: this is the tab that has not finished opening.
+	const containerEl = window.document.createElement("div");
+	containerEl.className = "view-content";
+	leafContentEl.appendChild(containerEl);
+
+	const view = { getViewType: () => "pdf", containerEl, file: null };
+	const leaf: any = { view };
+	workspace.leaves.push(leaf);
+	workspace.activeLeaf = leaf;
+
+	const { default: PdfInkPlugin } = require(findBuiltPlugin());
+	const plugin: any = new (PdfInkPlugin as any)();
+	plugin.app = app;
+	await plugin.onload();
+
+	// The first scan is deferred so startup stays cheap; wait for it.
+	await waitFor(() => Boolean(actionsEl.querySelector(".pdf-ink-header-btn")));
+	assert.ok(
+		actionsEl.querySelector(".pdf-ink-header-btn"),
+		"the header button does not wait for the viewer",
+	);
+	assert.equal(
+		containerEl.querySelector(".pdf-ink-toolbar"),
+		null,
+		"there is no floating toolbar without a viewer",
 	);
 
 	await plugin.onunload();

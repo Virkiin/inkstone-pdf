@@ -381,6 +381,7 @@ export class PdfInkSettingTab extends PluginSettingTab {
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.showToolbarAlways).onChange(async (value) => {
 					this.plugin.settings.showToolbarAlways = value;
+					this.plugin.applyToolbarSetting();
 					await this.plugin.saveSettings();
 				}),
 			);

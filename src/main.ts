@@ -79,6 +79,8 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 	private readonly controllers = new Map<WorkspaceLeaf, PdfInkController>();
 	private layersPopover: PdfInkLayersPopover | null = null;
 	private lastController: PdfInkController | null = null;
+	/** Coalesces bursts of layout / active-leaf / file-open events into one scan. */
+	private scanTimer: number | null = null;
 	private settingsTimer: number | null = null;
 	private readonly logLines: string[] = [];
 	private lastDump = 0;
@@ -126,17 +128,23 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		this.addRibbonIcon("pencil", t("Inkstone PDF：开启/关闭绘制"), () => this.toggleDrawing());
 		this.registerCommands();
 
-		this.registerEvent(this.app.workspace.on("layout-change", () => this.scanLeaves()));
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleScan()));
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
-				this.scanLeaves();
+				this.scheduleScan();
 				this.trackActive();
+				// A tab that was built while the plugin was not looking still has to
+				// get its header button the moment the user switches to it.
+				this.refreshUI();
+				// A tab restored in the background skipped its page mount; now that
+				// its DOM is in the document, do it.
+				this.getActiveController()?.attach();
 				this.emitter.trigger("pdf-ink:active-changed");
 			}),
 		);
 		this.registerEvent(
 			this.app.workspace.on("file-open", () => {
-				this.scanLeaves();
+				this.scheduleScan();
 				this.trackActive();
 			}),
 		);
@@ -215,8 +223,10 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 			window.removeEventListener("pointerdown", this.globalPointerDown, true),
 		);
 
+		// Build our DOM after Obsidian has painted the workspace: on a vault with
+		// 700-page PDFs the viewer mount alone is heavy enough to be felt.
 		this.app.workspace.onLayoutReady(() => {
-			this.scanLeaves();
+			this.scheduleScan();
 			this.trackActive();
 		});
 		this.observeLongTasks();
@@ -271,6 +281,8 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 	}
 
 	async onunload(): Promise<void> {
+		if (this.scanTimer !== null) window.clearTimeout(this.scanTimer);
+		this.scanTimer = null;
 		this.layersPopover?.close();
 		this.layersPopover = null;
 		for (const controller of this.controllers.values()) controller.destroy();
@@ -1221,14 +1233,37 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 	/* Views                                                               */
 	/* ------------------------------------------------------------------ */
 
+	/**
+	 * Coalesces the workspace events that all mean "the set of PDF views may have
+	 * changed". At startup Obsidian fires a burst of them, and every pass walks
+	 * every page of every PDF — so one pass per burst instead of one per event.
+	 */
+	private scheduleScan(): void {
+		if (this.scanTimer !== null) return;
+		this.scanTimer = window.setTimeout(() => {
+			this.scanTimer = null;
+			this.scanLeaves();
+		}, 150);
+	}
+
 	private scanLeaves(): void {
 		const leaves = this.app.workspace.getLeavesOfType("pdf");
+		const live = new Set<WorkspaceLeaf>();
 		for (const leaf of leaves) {
 			const view = leaf.view as any;
 			if (!view || view.getViewType?.() !== "pdf") continue;
+			live.add(leaf);
 			const existing = this.controllers.get(leaf);
-			if (existing) existing.attach();
+			// A view whose DOM node was replaced (Obsidian rebuilds tab content on
+			// restore) needs a fresh controller: the old one draws into a dead node.
+			const sameDom = existing?.containerEl === (view.containerEl as HTMLElement);
+			if (existing && sameDom) existing.attach();
 			else {
+				if (existing) {
+					existing.destroy();
+					this.controllers.delete(leaf);
+					if (this.lastController === existing) this.lastController = null;
+				}
 				this.attachLeaf(leaf);
 				if (!this.autoDumpScheduled) {
 					this.autoDumpScheduled = true;
@@ -1239,13 +1274,13 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 			}
 		}
 		for (const [leaf, controller] of [...this.controllers]) {
-			const view = leaf.view as any;
-			const connected = (view?.containerEl as HTMLElement | undefined)?.isConnected;
-			if (!view || view.getViewType?.() !== "pdf" || !connected) {
-				controller.destroy();
-				this.controllers.delete(leaf);
-				if (this.lastController === controller) this.lastController = null;
-			}
+			// Only a tab that actually went away is torn down. A tab restored in
+			// the background keeps its controller (and therefore its header
+			// button); its DOM may not be attached yet, which is fine.
+			if (live.has(leaf)) continue;
+			controller.destroy();
+			this.controllers.delete(leaf);
+			if (this.lastController === controller) this.lastController = null;
 		}
 	}
 
@@ -1291,7 +1326,10 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
 			if (found) return;
 			const container = (leaf.view as any)?.containerEl as HTMLElement | undefined;
-			if (container && (container === activeEl || container.contains(activeEl))) {
+			if (!container) return;
+			// The class sits on `.workspace-leaf`, the *parent* of the view
+			// container, so match in either direction.
+			if (container === activeEl || container.contains(activeEl) || activeEl.contains(container)) {
 				found = leaf;
 			}
 		});
@@ -1313,12 +1351,55 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		return null;
 	}
 
+	/**
+	 * A stroke has to start in the window capture phase, before pdf.js reacts,
+	 * and that means calling `preventDefault()` — which also swallows the
+	 * compatibility `mousedown` that Obsidian uses both to activate the clicked
+	 * leaf and to move the focus. In a split layout the note next to the PDF
+	 * therefore stayed the active, focused leaf: `getActiveController()` found no
+	 * PDF, so the key handler returned and every tool shortcut was typed into
+	 * the note. Do here what the click would have done.
+	 */
+	activateLeafForPointer(controller: PdfInkController): void {
+		this.releaseForeignFocus(controller);
+		const workspace: any = this.app.workspace;
+		const leaf = controller.leaf;
+		if (!leaf || typeof workspace?.setActiveLeaf !== "function") return;
+		if (workspace.activeLeaf === leaf) return;
+		const leafEl =
+			(leaf as { containerEl?: HTMLElement }).containerEl ??
+			(controller.containerEl?.closest(".workspace-leaf") as HTMLElement | null);
+		if (leafEl?.classList.contains("mod-active")) return;
+		// Modern signature (0.16.3+): no history entry, and the focus stays with
+		// us — `releaseForeignFocus` above already took it away from the editor.
+		workspace.setActiveLeaf(leaf, { focus: false });
+	}
+
+	/** Blur whatever another leaf's editor had focused, as a plain click would. */
+	private releaseForeignFocus(controller: PdfInkController): void {
+		const active = document.activeElement as HTMLElement | null;
+		if (!active || active === document.body) return;
+		if (controller.containerEl?.contains(active)) return;
+		active.blur?.();
+	}
+
 	refreshLayouts(): void {
 		for (const controller of this.controllers.values()) controller.refreshLayout();
 	}
 
 	refreshUI(): void {
 		for (const controller of this.controllers.values()) controller.refreshToolbar();
+	}
+
+	/**
+	 * The "always show the toolbar" setting changed. The switch in the view
+	 * header is a per-tab override, so the setting has to be pushed into every
+	 * open tab — otherwise an already-open PDF would ignore it.
+	 */
+	applyToolbarSetting(): void {
+		for (const controller of this.controllers.values()) {
+			controller.setToolbarVisible(this.settings.showToolbarAlways);
+		}
 	}
 
 	/**
@@ -1441,6 +1522,11 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 			this.log("pointer: no controller for this container");
 			return;
 		}
+		// The tab asked for a plain PDF reader: touch nothing.
+		if (!controller.annotationsOn) {
+			this.log("pointer: annotations are off for this tab");
+			return;
+		}
 		if (controller.drawing) return;
 
 		// Tail of a just-released hold gesture: the driver says the tip is up
@@ -1450,6 +1536,9 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 			return;
 		}
 
+		// Consumed from here on, so Obsidian will not see the click: activate the
+		// leaf and take the focus away from a neighbouring note ourselves.
+		this.activateLeafForPointer(controller);
 		event.preventDefault();
 		event.stopPropagation();
 		event.stopImmediatePropagation();
@@ -1631,6 +1720,9 @@ export default class PdfInkPlugin extends Plugin {	settings: PdfInkSettings = { 
 		}
 		const controller = this.getActiveController();
 		if (!controller) return;
+		// With annotation off, the PDF keeps its own shortcuts (page navigation,
+		// find, …) — the ink shortcuts must not steal them.
+		if (!controller.annotationsOn) return;
 
 		// Clipboard and delete work whenever something is selected, even when the
 		// pen owns the page.

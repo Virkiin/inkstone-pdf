@@ -29,6 +29,7 @@ import type { RecognizedShape } from "./recognize";
 import { applyTransform, restoreStroke, snapshotStroke } from "./transform";
 import type { InkTransform, StrokeSnapshot } from "./transform";
 import type { InkDoc, Layer, ShapeKind, Stroke, StrokeKind } from "./types";
+import { PdfInkHeaderControl } from "./ui/header-control";
 import { SelectionMenu } from "./ui/selection-menu";
 import { PdfInkToolbar } from "./ui/toolbar";
 import type { Box } from "./ui/place";
@@ -266,8 +267,15 @@ export class PdfInkController {
 	doc: InkDoc | null = null;
 	filePath: string | null = null;
 	drawing = false;
+	/** Per-tab master switch: off means a plain PDF reader, no ink at all. */
+	annotationsOn = true;
+	/** Per-tab: the floating toolbar is wanted in this tab. */
+	toolbarVisible = true;
 	toolbar: PdfInkToolbar | null = null;
 	history = new History(250);
+	private headerControl: PdfInkHeaderControl | null = null;
+	private headerCheckTimer: number | null = null;
+	private headerRetries = 0;
 
 	private readonly overlays = new Map<number, PageOverlay>();
 	private readonly pageEls = new Map<number, HTMLElement>();
@@ -277,6 +285,7 @@ export class PdfInkController {
 	private hookedBus: any = null;
 	private busHandlers: Array<[string, (event: any) => void]> = [];
 	private domObserver: MutationObserver | null = null;
+	private headerObserver: MutationObserver | null = null;
 	private pageResizeObserver: ResizeObserver | null = null;
 	private readonly observedPages = new Set<HTMLElement>();
 	private attachTimer: number | null = null;
@@ -305,8 +314,6 @@ export class PdfInkController {
 	private hoverPoint: { overlay: PageOverlay; x: number; y: number } | null = null;
 	/** set when a long, light press should select instead of erase */
 	private holdSelectAt: { x: number; y: number } | null = null;
-	private lastTapStrokeId: string | null = null;
-	private lastTapStrokeAt = 0;
 	private lastTap: { time: number; x: number; y: number } | null = null;
 	/** selection mode was entered by a pen long press (temporary) */
 	private selectEnteredByHold = false;
@@ -434,6 +441,9 @@ export class PdfInkController {
 		this.plugin = plugin;
 		this.leaf = leaf;
 		this.view = leaf.view as any;
+		// A fresh tab starts where the setting left off; the header switch is the
+		// per-tab override.
+		this.toolbarVisible = Boolean(plugin.settings.showToolbarAlways);
 		this.containerEl.addEventListener("pointermove", this.onHoverPointerMove);
 		this.containerEl.addEventListener("pointerleave", this.hideHoverCursor);
 		for (const type of ["mousedown", "mouseup", "click", "dblclick"]) {
@@ -567,6 +577,15 @@ export class PdfInkController {
 			this.attachTimer = null;
 		}
 		this.ensureDomObserver();
+		// The header button does not need the viewer: mount it first, so a tab
+		// whose PDF is still loading (or never loads) still has its entry point.
+		this.ensureHeaderControl();
+		if (!this.containerEl.isConnected) {
+			// A tab restored in the background has no DOM in the document yet, and
+			// there is nothing on screen to draw into. It mounts when the user
+			// switches to it (main.ts re-attaches the active leaf).
+			return;
+		}
 		void this.resolveViewer();
 		if (!this.hasViewer) {
 			this.plugin.log(`attach: no viewer element yet (retries=${retries})`);
@@ -667,22 +686,41 @@ export class PdfInkController {
 	}
 
 	private ensureDomObserver(): void {
-		if (this.domObserver || typeof MutationObserver === "undefined") return;
+		if (typeof MutationObserver === "undefined") return;
 		const container = this.containerEl;
 		if (!container) return;
-		this.domObserver = new MutationObserver(() => {
-			if (this.destroyed) return;
-			// pdf.js removes all children of a page on reset; put our canvases
-			// back immediately so an in-progress stroke is not lost.
-			this.ensureOverlaysAttached();
-			const now = Date.now();
-			if (now - this.lastSetupAt < 250) return;
-			this.lastSetupAt = now;
-			if (!this.hasViewer) return;
-			this.setupPages();
-			this.refreshToolbar();
-		});
-		this.domObserver.observe(container, { childList: true, subtree: true });
+		// Two narrow observers instead of one wide one: pages churn constantly
+		// while pdf.js renders, and the header has nothing to do with that. Each
+		// callback also defers its DOM writes — writing to the DOM from inside a
+		// MutationObserver callback re-enters it, and `setIcon` rewriting an
+		// observed element locked the whole workspace up once already.
+		const leafContent =
+			(container.closest?.(".workspace-leaf-content") as HTMLElement | null) ?? null;
+		if (!this.domObserver) {
+			this.domObserver = new MutationObserver(() => {
+				if (this.destroyed) return;
+				// pdf.js removes all children of a page on reset; put our canvases
+				// back immediately so an in-progress stroke is not lost.
+				this.ensureOverlaysAttached();
+				const now = Date.now();
+				if (now - this.lastSetupAt < 250) return;
+				this.lastSetupAt = now;
+				if (!this.hasViewer) return;
+				this.setupPages();
+				this.refreshToolbar();
+			});
+			this.domObserver.observe(container, { childList: true, subtree: true });
+		}
+		if (!this.headerObserver) {
+			// Obsidian rebuilds the view header (and drops our button) without
+			// touching the pages, so the header needs its own watcher.
+			const headerEl =
+				leafContent?.querySelector<HTMLElement>(".view-header") ?? leafContent ?? container;
+			this.headerObserver = new MutationObserver(() => {
+				if (!this.destroyed) this.scheduleHeaderCheck();
+			});
+			this.headerObserver.observe(headerEl, { childList: true, subtree: true });
+		}
 	}
 
 	private ensurePageResizeObserver(): ResizeObserver | null {		if (this.pageResizeObserver) return this.pageResizeObserver;
@@ -1043,6 +1081,9 @@ export class PdfInkController {
 
 	setDrawing(on: boolean): void {
 		if (this.destroyed) return;
+		// Turning the pen on is an explicit "I want ink in this tab": if the tab
+		// was switched to a plain reader, switching the pen on is the way back.
+		if (on && !this.annotationsOn) this.setAnnotations(true);
 		if (on) {
 			this.toolbarDismissed = false;
 			this.attach();
@@ -1074,15 +1115,20 @@ export class PdfInkController {
 
 	dismissToolbar(): void {
 		this.toolbarDismissed = true;
+		this.toolbarVisible = false;
 		this.setDrawing(false);
 	}
 
 	refreshToolbar(): void {
-		this.containerEl.classList.toggle("pdf-ink-tool-hand", this.plugin.tool === "hand");
+		this.containerEl.classList.toggle(
+			"pdf-ink-tool-hand",
+			this.annotationsOn && this.plugin.tool === "hand",
+		);
 		this.applyAltPassthrough();
 		this.containerEl.classList.toggle(
 			"pdf-ink-pen-mode",
-			this.plugin.settings.stylusFreehand || this.plugin.settings.mouseFreehand,
+			this.annotationsOn &&
+				(this.plugin.settings.stylusFreehand || this.plugin.settings.mouseFreehand),
 		);
 		// The disc only makes sense for the freehand eraser; rect / lasso erase
 		// use the crosshair like the selection tools do.
@@ -1092,9 +1138,9 @@ export class PdfInkController {
 			this.containerEl.classList.remove("pdf-ink-cursor-point", "pdf-ink-cursor-ring");
 		}
 		const wanted =
+			this.annotationsOn &&
 			Boolean(this.viewerEl) &&
-			!this.toolbarDismissed &&
-			(this.drawing || this.plugin.settings.showToolbarAlways);
+			(this.toolbarVisible || this.drawing);
 		if (wanted) {
 			if (!this.toolbar) this.toolbar = new PdfInkToolbar(this.plugin, this);
 			else this.toolbar.update();
@@ -1102,6 +1148,103 @@ export class PdfInkController {
 			this.toolbar.destroy();
 			this.toolbar = null;
 		}
+		// The header can appear before or after the viewer; asking every time a
+		// toolbar refresh runs is what keeps the button from going missing on a
+		// tab whose view was built late.
+		this.ensureHeaderControl();
+	}
+
+	/**
+	 * Turns annotation off for this tab only: the PDF goes back to being a plain
+	 * reader. The ink that is already on the page stays visible (it is part of the
+	 * document), but nothing may draw, move or erase it, so every input path is
+	 * shut down here and skipped in the global handlers.
+	 */
+	setAnnotations(on: boolean): void {
+		if (this.destroyed || this.annotationsOn === on) return;
+		this.annotationsOn = on;
+		if (on) {
+			this.attach();
+			void this.ensureFile();
+			this.renderNow();
+		} else {
+			this.setDrawing(false);
+			this.finishInteractions();
+			this.clearSelection();
+			this.selectionMenu?.close();
+			this.hideEraserCursor();
+			this.hideBrushRing();
+			this.containerEl.classList.remove(
+				"pdf-ink-pen-mode",
+				"pdf-ink-drawing",
+				"pdf-ink-tool-hand",
+				"pdf-ink-cursor-point",
+				"pdf-ink-cursor-ring",
+			);
+		}
+		this.refreshToolbar();
+		this.headerControl?.update();
+		this.plugin.log(`annotations ${on ? "on" : "off"} ${this.filePath ?? "-"}`);
+		this.plugin.emitter.trigger("pdf-ink:active-changed");
+		this.notify();
+	}
+
+	toggleAnnotations(): void {
+		this.setAnnotations(!this.annotationsOn);
+	}
+
+	/** Per-tab toolbar switch; also un-dismisses the toolbar it turns on. */
+	setToolbarVisible(on: boolean): void {
+		if (this.destroyed) return;
+		if (on) {
+			this.toolbarDismissed = false;
+			// A tab whose reader is still loading has no viewer yet; ask again
+			// instead of leaving the switch looking dead.
+			if (!this.viewerEl) this.attach();
+		}
+		if (this.toolbarVisible === on) {
+			this.refreshToolbar();
+			return;
+		}
+		this.toolbarVisible = on;
+		this.refreshToolbar();
+	}
+
+	toggleToolbar(): void {
+		this.setToolbarVisible(!this.toolbarVisible);
+	}
+
+	/** Mounts the header button; cheap when it is already in place. */
+	private ensureHeaderControl(): void {
+		if (!this.headerControl) {
+			this.headerControl = new PdfInkHeaderControl(this);
+		}
+		this.headerControl.ensure();
+		if (this.headerControl.isMounted) {
+			this.headerRetries = 0;
+			return;
+		}
+		// The header is often built after the viewer. Retry a few times, then stop:
+		// the header MutationObserver takes over once the element exists.
+		if (this.headerRetries >= 12) return;
+		this.headerRetries++;
+		window.setTimeout(() => {
+			if (!this.destroyed) this.ensureHeaderControl();
+		}, 250);
+	}
+
+	/**
+	 * Re-checks the header button on the next task instead of inside the DOM
+	 * observer. A DOM write from a MutationObserver callback is seen as a new
+	 * mutation and re-enters the callback — with `setIcon` rewriting the button's
+	 * children every time, that ping-pong froze the whole workspace on load.
+	 */
+	private scheduleHeaderCheck(): void {
+		if (this.headerCheckTimer !== null || this.destroyed) return;
+		this.headerCheckTimer = window.setTimeout(() => {
+			this.headerCheckTimer = null;
+			this.ensureHeaderControl();
+		}, 0);
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -1160,6 +1303,9 @@ export class PdfInkController {
 		if (event.button !== 0) return;
 		const rect = this.rectFor(overlay, true);
 		if (rect.width < 2 || rect.height < 2) return;
+		// Drawing mode swallows the click too, so this leaf has to be activated and
+		// the focus moved here by hand (see PdfInkPlugin.activateLeafForPointer).
+		this.plugin.activateLeafForPointer(this);
 		event.preventDefault();
 		event.stopPropagation();
 		event.stopImmediatePropagation();
@@ -3266,23 +3412,6 @@ export class PdfInkController {
 		return false;
 	}
 
-	/** Removes the dot left by the first tap of a double tap. */
-	private dropLastTapDot(now: number): void {
-		const id = this.lastTapStrokeId;
-		this.lastTapStrokeId = null;
-		if (!id || now - this.lastTapStrokeAt > 500) return;
-		const doc = this.doc;
-		if (!doc) return;
-		for (const layer of doc.layers) {
-			const index = layer.strokes.findIndex((stroke) => stroke.id === id);
-			if (index >= 0) {
-				layer.strokes.splice(index, 1);
-				this.afterChange();
-				return;
-			}
-		}
-	}
-
 	/** Grows a selection box by a few pixels so its dashed edge is grabbable. */
 	private padBounds(
 		b: { x0: number; y0: number; x1: number; y1: number },
@@ -4035,23 +4164,6 @@ export class PdfInkController {
 			}
 			this.jitter = null;
 		}
-		// A tap with the pen must not leave a dot: treat it as "select this
-		// stroke" instead. Long-press-select is handled earlier, in onPointerUp.
-		if (
-			session.type === "freehand" &&
-			Math.floor(stroke.points.length / 3) === 1 &&
-			this.plugin.tool !== "select"
-		) {
-			session.overlay.clearLive();
-			if (this.selectStrokeAt(session.overlay, stroke.points[0], stroke.points[1])) {
-				this.plugin.log("tap select");
-				this.lastTapStrokeId = null;
-			} else {
-				this.clearSelection();
-				this.afterChange(session.overlay);
-			}
-			return;
-		}
 		if (stroke.kind === "eraser-rect" || stroke.kind === "eraser-lasso") {
 			const pageW = session.overlay.widthPx || 1;
 			const pageH = session.overlay.heightPx || 1;
@@ -4087,10 +4199,6 @@ export class PdfInkController {
 		}
 		layer.strokes.push(stroke);
 		perf.mark("commit");
-		if (session.type === "freehand" && Math.floor(stroke.points.length / 3) === 1) {
-			this.lastTapStrokeId = stroke.id;
-			this.lastTapStrokeAt = perf.now();
-		}
 		perf.add("stroke.points", stroke.points.length / 3);
 		this.plugin.log(
 			`commit kind=${stroke.kind} page=${stroke.page} points=${
@@ -4690,7 +4798,16 @@ export class PdfInkController {
 		this.updateHoverCursor(event);
 	}
 
-	private updateHoverCursor(event: PointerEvent): void {		const tool = this.plugin.tool;
+	private updateHoverCursor(event: PointerEvent): void {
+		const tool = this.plugin.tool;
+		// A tab that was switched to a plain reader must look like one: no pen
+		// cursor, no brush ring, no eraser disc — just the PDF's own pointer.
+		if (!this.annotationsOn) {
+			this.containerEl.classList.remove("pdf-ink-cursor-point", "pdf-ink-cursor-ring");
+			this.hideBrushRing();
+			this.hideEraserCursor();
+			return;
+		}
 		const pageEl = (event.target as HTMLElement | null)?.closest?.(
 			".page",
 		) as HTMLElement | null;
@@ -5261,12 +5378,16 @@ export class PdfInkController {
 		if (this.destroyed) return;
 		this.destroyed = true;
 		if (this.attachTimer !== null) window.clearTimeout(this.attachTimer);
+		if (this.headerCheckTimer !== null) window.clearTimeout(this.headerCheckTimer);
+		this.headerCheckTimer = null;
 		this.finishInteractions();
 		this.unhook();
 		this.io?.disconnect();
 		this.io = null;
 		this.domObserver?.disconnect();
 		this.domObserver = null;
+		this.headerObserver?.disconnect();
+		this.headerObserver = null;
 		this.pageResizeObserver?.disconnect();
 		this.pageResizeObserver = null;
 		for (const pageNumber of [...this.overlays.keys()]) this.unmount(pageNumber);
@@ -5280,6 +5401,8 @@ export class PdfInkController {
 		this.eraserCursor = null;
 		this.toolbar?.destroy();
 		this.toolbar = null;
+		this.headerControl?.destroy();
+		this.headerControl = null;
 		this.unhookLayoutListeners();
 		this.containerEl.classList.remove("pdf-ink-drawing");
 		this.containerEl.classList.remove("pdf-ink-stroking");
